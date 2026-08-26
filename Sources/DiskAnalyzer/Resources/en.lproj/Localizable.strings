@@ -1,0 +1,180 @@
+"app.title" = "Disk Analyzer";
+
+"common.done" = "Done";
+"common.cancel" = "Cancel";
+"common.ok" = "OK";
+"common.view" = "View";
+"common.authorize" = "Authorize";
+"common.copy_all" = "Copy All";
+"common.copied" = "Copied";
+"common.reveal_finder" = "Show in Finder";
+"common.enter_directory" = "Open This Folder";
+"common.move_to_trash" = "Move to Trash…";
+"common.none_selected" = "(No Selection)";
+"common.rescan" = "Rescan";
+
+"settings.title" = "Settings";
+"settings.subtitle" = "Choose how Disk Analyzer appears.";
+"settings.language.title" = "Interface Language";
+"settings.language.detail" = "The interface updates immediately and remembers this choice.";
+
+"toolbar.no_location" = "No scan location selected";
+"toolbar.home" = "Home";
+"toolbar.home.help" = "Return to scan choices while preserving the current result";
+"toolbar.choose_directory" = "Choose Folder…";
+"toolbar.metric" = "Size Metric";
+"toolbar.items" = "%@ items";
+"toolbar.cancel" = "Cancel";
+"toolbar.rescan" = "Rescan";
+"toolbar.return_results" = "Return to Results";
+"toolbar.startup_disk" = "Startup Disk";
+"toolbar.home_directory" = "Home Folder";
+"toolbar.choose_other" = "Choose Another Folder…";
+"toolbar.start_scan" = "Start Scan";
+"toolbar.settings" = "Settings";
+"toolbar.settings.help" = "Language and application settings";
+
+"picker.title" = "Choose a disk or folder to analyze";
+"picker.prompt" = "Analyze";
+"picker.message" = "Analysis reads file metadata only and does not modify files.";
+
+"drag.tooltip" = "Hold and drag into the Full Disk Access list";
+"drag.accessibility.label" = "Draggable DiskAnalyzer application icon";
+"drag.accessibility.help" = "Hold the icon and drag it into the Full Disk Access list in System Settings";
+
+"metric.allocated.title" = "Allocated Size";
+"metric.logical.title" = "File Size";
+"metric.allocated.explanation" = "Uses filesystem-allocated blocks, so sparse files and hard links are not repeatedly counted by apparent size.";
+"metric.logical.explanation" = "Uses file-content length; hard links, clones, and sparse files can make the total exceed physical disk usage.";
+
+"sort.size_descending" = "Largest First";
+"sort.size_ascending" = "Smallest First";
+"sort.name_ascending" = "Name A–Z";
+"sort.name_descending" = "Name Z–A";
+
+"scope.current" = "Current Level";
+"scope.directories" = "Largest Folders";
+"scope.files" = "Largest Files";
+
+"scanner.error.path_missing" = "Path does not exist: %@";
+"scanner.error.not_directory" = "Choose a folder: %@";
+"scanner.error.filesystem_info" = "Could not read filesystem information: %@";
+"scanner.default_volume" = "Disk";
+"scanner.other_files" = "%@ other files";
+
+"volume.kind.system" = "macOS Auxiliary System Volume";
+"volume.kind.external" = "External Disk or Disk Image";
+"volume.kind.network" = "Network Volume";
+"volume.kind.other" = "Other Filesystem";
+"issue.kind.unreadable_directory" = "Folder Contents Not Read";
+"issue.kind.metadata_unavailable" = "Metadata Not Read";
+"issue.error.no_posix" = "FTS did not return a POSIX error code";
+"issue.error.format" = "%@ %@: %@";
+"diagnostics.unreadable_directories" = "%@ folders not read";
+"diagnostics.metadata_errors" = "%@ items missing metadata";
+"diagnostics.skipped_volumes" = "Skipped %@ other mounted volumes by policy";
+"diagnostics.list_separator" = ", ";
+"diagnostics.list_more" = "%@, and others";
+
+"coverage.banner.title" = "%@ items were not fully read";
+"coverage.banner.fallback" = "Some items were not read";
+"coverage.banner.detail" = "%@. The scanner recorded the exact paths and original macOS errors.";
+"coverage.banner.view_items" = "View Items";
+"coverage.detail.title" = "Items Not Fully Read";
+"coverage.detail.explanation" = "These are the exact paths and POSIX errors returned to the scanner. Folder entries mean their contents were not counted; metadata entries mean the item itself was not counted.";
+"coverage.detail.unreadable_section" = "Folder Contents Not Read (%@)";
+"coverage.detail.metadata_section" = "Metadata Not Read (%@)";
+
+"skipped.banner.title" = "%@ independent mounted volumes were not included";
+"skipped.banner.fallback" = "View the exact volume names";
+"skipped.banner.detail" = "%@. They belong to other filesystems and do not indicate a permission error.";
+"skipped.banner.view" = "View Volumes";
+"skipped.detail.title" = "%@ mounted volumes were not included";
+"skipped.detail.explanation" = "The scanner encountered the volume names, types, and mount paths listed below. They belong to filesystems other than the current scan, so their sizes were not combined. This is not a permission error. To analyze one, return home and select its path separately.";
+
+"fda.card.confirmed.title" = "Disk Access Is Ready";
+"fda.card.identity_changed.title" = "The New Version Needs Authorization";
+"fda.card.unavailable.title" = "Disk Access Could Not Be Verified";
+"fda.card.not_confirmed.title" = "A Full-Disk Scan Needs Permission";
+"fda.card.confirmed.detail" = "Full Disk Access was detected. Scanning can begin.";
+"fda.card.identity_changed.detail" = "This app and the previous entry in System Settings have different code identities.";
+"fda.card.unavailable.detail" = "Open the permission guide to inspect the setting, or continue scanning without it.";
+"fda.card.not_confirmed.detail" = "Authorization lets Disk Analyzer cover as many folders as possible.";
+"fda.updated_notice" = "Disk Analyzer was updated. Remove the old entry from the permission list, then add this version.";
+"fda.open_settings" = "Open Full Disk Access Settings";
+"fda.reveal_app" = "Show App in Finder";
+"fda.recheck" = "Check Permission Again";
+"fda.drag_fallback" = "Drag did not work? Click the + button below the permission list, choose %@ from Applications, then turn on its switch.";
+"fda.not_now" = "Not Now";
+"fda.skip_continue" = "Skip and Continue Scanning";
+"fda.privacy" = "Reads local file metadata only. Nothing is uploaded.";
+"fda.header.confirmed" = "Full Disk Access Is On";
+"fda.header.request" = "Let %@ Read the Full Disk";
+"fda.header.detail" = "macOS requires you to add the app and enable access in System Settings.";
+"fda.steps.title" = "After Settings opens, drag the app icon below into the Full Disk Access list";
+"fda.step.open.title" = "Open Settings";
+"fda.step.open.detail" = "Keep this window visible";
+"fda.step.drag.title" = "Drag %@";
+"fda.step.drag.detail" = "Hold the icon and drag it out";
+"fda.step.switch.title" = "Turn On Access";
+"fda.step.switch.detail" = "Follow macOS to verify and relaunch";
+"fda.status.denied" = "Access is not detected yet. Add the app, turn on its switch, then click Check Permission Again.";
+"fda.status.unavailable" = "This macOS version could not verify access automatically. You can continue and review any uncovered folders after the scan.";
+"fda.confirmed.probe" = "A protected location was successfully read";
+"fda.install.title" = "Install %@ First";
+"fda.install.detail" = "Drag %@ to Applications, then open the copy in Applications.";
+"fda.got_it" = "Got It";
+
+"trash.protected" = "This location is protected and cannot be moved to Trash from the app.";
+"trash.moved" = "“%@” was moved to Trash. Rescan to update the totals.";
+"trash.failed" = "Could not move the item to Trash: %@";
+"trash.dialog.title" = "Move to Trash?";
+"trash.dialog.action" = "Move to Trash";
+"trash.dialog.message" = "Move “%@” to Trash. The item can be restored from Trash.";
+"alert.title" = "Disk Analysis";
+"navigation.up.help" = "Go up one level";
+
+"summary.current_metric" = "Current metric";
+"summary.allocated_detail" = "Allocated space for visible files";
+"summary.logical_detail" = "Apparent content length";
+"summary.item_count" = "Item Count";
+"summary.directory_count" = "%@ folders";
+"summary.volume_available" = "available, %@ total";
+"summary.elapsed" = "Scan Time";
+"summary.seconds" = "%@ s";
+"summary.coverage_warning" = "Some items were not covered";
+"summary.complete" = "Scan complete";
+"volume.reconciliation.positive" = "The volume uses %@. The directory tree accounts for %@, leaving %@ unattributed, usually because of snapshots, purgeable space, protected areas, or system reservations.";
+"volume.reconciliation.negative" = "Allocated blocks total %@, compared with %@ used by the volume, an overlap of %@. APFS clones or shared blocks usually cause this, so per-file allocation cannot be added as ordinary independent usage.";
+"volume.reconciliation.title" = "Volume Reconciliation";
+
+"home.scanning.title" = "Reading File Metadata";
+"home.title" = "See Where Your Disk Space Went";
+"home.detail" = "Explore large folders and files level by level, then decide what to clean.";
+"home.progress.items" = "%@ items";
+"home.cancel_scan" = "Cancel Scan";
+"home.startup.title" = "Scan Startup Disk";
+"home.startup.detail" = "Analyze Macintosh HD";
+"home.user.title" = "Scan Home Folder";
+"home.other.title" = "Choose Another Folder";
+"home.other.detail" = "External disk or selected folder";
+"home.safety" = "Analysis is read-only by default. Cleanup only moves items to Trash and always asks for confirmation.";
+
+"ranking.scope" = "View";
+"ranking.search" = "Search name or path";
+"ranking.sort" = "Sort";
+"ranking.sort.help" = "Sort order";
+"ranking.empty" = "There are no items to display here";
+"ranking.no_match" = "No matching items";
+"ranking.footer.count" = "Showing %@ items";
+"ranking.footer.help" = "Double-click to open a folder · Right-click for more actions";
+"ranking.aggregate" = "Grouped display; its size remains included in the total";
+"ranking.skipped_volume" = "Other mounted volume; not included in this scan";
+"ranking.shared.help" = "This item shares file data with another path; deleting one link may not free space";
+"ranking.unreadable.help" = "Folder contents could not be read, so the displayed size may be low";
+"ranking.row.help" = "%@\nAllocated Size: %@\nFile Size: %@";
+
+"sunburst.reveal" = "Show in Finder";
+"sunburst.enter" = "Open This Folder";
+"sunburst.none" = "(No Selection)";
+"sunburst.hint" = "Double-click a segment to open its folder";

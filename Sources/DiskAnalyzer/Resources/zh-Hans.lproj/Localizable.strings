@@ -1,0 +1,180 @@
+"app.title" = "磁盘空间分析";
+
+"common.done" = "完成";
+"common.cancel" = "取消";
+"common.ok" = "好";
+"common.view" = "查看";
+"common.authorize" = "去授权";
+"common.copy_all" = "复制全部";
+"common.copied" = "已复制";
+"common.reveal_finder" = "在 Finder 中显示";
+"common.enter_directory" = "进入此目录";
+"common.move_to_trash" = "移到废纸篓…";
+"common.none_selected" = "（无选中项）";
+"common.rescan" = "重新扫描";
+
+"settings.title" = "设置";
+"settings.subtitle" = "选择 Disk Analyzer 的显示方式。";
+"settings.language.title" = "界面语言";
+"settings.language.detail" = "界面会立即切换，并记住这项选择。";
+
+"toolbar.no_location" = "尚未选择扫描位置";
+"toolbar.home" = "首页";
+"toolbar.home.help" = "返回扫描选择首页，保留当前分析结果";
+"toolbar.choose_directory" = "选择目录…";
+"toolbar.metric" = "统计口径";
+"toolbar.items" = "%@ 个项目";
+"toolbar.cancel" = "取消";
+"toolbar.rescan" = "重新扫描";
+"toolbar.return_results" = "返回分析结果";
+"toolbar.startup_disk" = "启动磁盘";
+"toolbar.home_directory" = "个人目录";
+"toolbar.choose_other" = "选择其他目录…";
+"toolbar.start_scan" = "开始扫描";
+"toolbar.settings" = "设置";
+"toolbar.settings.help" = "语言与应用设置";
+
+"picker.title" = "选择要分析的磁盘或目录";
+"picker.prompt" = "开始分析";
+"picker.message" = "分析过程只读取文件元数据，不会修改任何文件。";
+
+"drag.tooltip" = "按住并拖到“完全磁盘访问”列表";
+"drag.accessibility.label" = "可拖拽的 DiskAnalyzer 应用图标";
+"drag.accessibility.help" = "按住图标并拖到系统设置的完全磁盘访问列表";
+
+"metric.allocated.title" = "实际占用";
+"metric.logical.title" = "文件大小";
+"metric.allocated.explanation" = "按文件系统已分配块统计，稀疏文件与硬链接不会按表面大小重复计算。";
+"metric.logical.explanation" = "按文件内容长度统计；硬链接、克隆与稀疏文件可能让总和大于磁盘实际占用。";
+
+"sort.size_descending" = "从大到小";
+"sort.size_ascending" = "从小到大";
+"sort.name_ascending" = "名称 A–Z";
+"sort.name_descending" = "名称 Z–A";
+
+"scope.current" = "当前层级";
+"scope.directories" = "最大目录";
+"scope.files" = "最大文件";
+
+"scanner.error.path_missing" = "路径不存在：%@";
+"scanner.error.not_directory" = "请选择一个目录：%@";
+"scanner.error.filesystem_info" = "无法读取文件系统信息：%@";
+"scanner.default_volume" = "磁盘";
+"scanner.other_files" = "其他 %@ 个文件";
+
+"volume.kind.system" = "macOS 辅助系统卷";
+"volume.kind.external" = "外置磁盘或磁盘映像";
+"volume.kind.network" = "网络卷";
+"volume.kind.other" = "其他独立文件系统";
+"issue.kind.unreadable_directory" = "目录内容未读取";
+"issue.kind.metadata_unavailable" = "元数据未读取";
+"issue.error.no_posix" = "FTS 未返回 POSIX 错误码";
+"issue.error.format" = "%@ %@：%@";
+"diagnostics.unreadable_directories" = "%@ 个目录未读取内容";
+"diagnostics.metadata_errors" = "%@ 个项目未读取元数据";
+"diagnostics.skipped_volumes" = "按设置跳过 %@ 个其他挂载卷";
+"diagnostics.list_separator" = "、";
+"diagnostics.list_more" = "%@ 等";
+
+"coverage.banner.title" = "%@ 个项目未完整读取";
+"coverage.banner.fallback" = "存在未读取项目";
+"coverage.banner.detail" = "%@。扫描器已记录具体路径和 macOS 返回的原始错误。";
+"coverage.banner.view_items" = "查看具体项目";
+"coverage.detail.title" = "未完整读取的具体项目";
+"coverage.detail.explanation" = "下面是扫描器收到的原始路径和 POSIX 错误，不再根据计数猜测权限状态。目录项表示其内容未统计；元数据项表示该项目本身未统计。";
+"coverage.detail.unreadable_section" = "目录内容未读取（%@）";
+"coverage.detail.metadata_section" = "元数据未读取（%@）";
+
+"skipped.banner.title" = "未计入 %@ 个独立挂载卷";
+"skipped.banner.fallback" = "可查看具体卷名";
+"skipped.banner.detail" = "%@。它们不属于当前文件系统，不代表权限错误。";
+"skipped.banner.view" = "查看具体卷";
+"skipped.detail.title" = "本次未计入的 %@ 个挂载卷";
+"skipped.detail.explanation" = "下面列出扫描器实际遇到的卷名、类型和完整挂载路径。它们与当前扫描卷不属于同一文件系统，因此没有合并计数；这不是权限错误。需要分析时，可返回主界面选择对应路径单独扫描。";
+
+"fda.card.confirmed.title" = "磁盘访问已设置";
+"fda.card.identity_changed.title" = "新版本需要重新授权";
+"fda.card.unavailable.title" = "无法自动确认磁盘权限";
+"fda.card.not_confirmed.title" = "扫描整个磁盘需要授权";
+"fda.card.confirmed.detail" = "已检测到完整磁盘访问权限，可以开始扫描。";
+"fda.card.identity_changed.detail" = "当前 App 与系统设置中的旧版本不是同一个代码身份。";
+"fda.card.unavailable.detail" = "可以打开授权向导检查设置，或跳过后继续扫描。";
+"fda.card.not_confirmed.detail" = "授权后，才能尽可能完整地统计所有文件夹。";
+"fda.updated_notice" = "检测到 App 已更新。请先删除权限列表中的旧条目，再添加当前版本。";
+"fda.open_settings" = "打开“完全磁盘访问”设置";
+"fda.reveal_app" = "在 Finder 中显示 App";
+"fda.recheck" = "重新检查权限";
+"fda.drag_fallback" = "拖拽没有反应？点击权限列表底部的“+”，选择“应用程序”中的 %@，再打开开关。";
+"fda.not_now" = "暂不授权";
+"fda.skip_continue" = "跳过并继续扫描";
+"fda.privacy" = "只读取本机文件元数据，不会上传。";
+"fda.header.confirmed" = "完整磁盘访问已开启";
+"fda.header.request" = "让 %@ 读取完整磁盘";
+"fda.header.detail" = "macOS 要求由你在系统设置中添加 App 并打开权限。";
+"fda.steps.title" = "打开设置后，把中间的 App 图标拖到“完全磁盘访问”列表";
+"fda.step.open.title" = "打开设置";
+"fda.step.open.detail" = "保持这个窗口可见";
+"fda.step.drag.title" = "拖动 %@";
+"fda.step.drag.detail" = "按住图标拖出去";
+"fda.step.switch.title" = "打开开关";
+"fda.step.switch.detail" = "按提示验证并重启";
+"fda.status.denied" = "尚未检测到权限。添加 App、打开开关后，再点“重新检查权限”。";
+"fda.status.unavailable" = "当前系统无法自动验证权限；可继续扫描，并根据未覆盖目录判断。";
+"fda.confirmed.probe" = "已实际检测到受保护目录可读取";
+"fda.install.title" = "先安装 %@";
+"fda.install.detail" = "把 %@ 拖到“应用程序”，再从“应用程序”中打开。";
+"fda.got_it" = "知道了";
+
+"trash.protected" = "这个位置受到保护，不能从应用中移到废纸篓。";
+"trash.moved" = "“%@”已移到废纸篓。重新扫描后会刷新统计。";
+"trash.failed" = "无法移到废纸篓：%@";
+"trash.dialog.title" = "移到废纸篓？";
+"trash.dialog.action" = "移到废纸篓";
+"trash.dialog.message" = "将“%@”移到废纸篓。此操作可在废纸篓中恢复。";
+"alert.title" = "磁盘分析";
+"navigation.up.help" = "返回上一级";
+
+"summary.current_metric" = "当前显示口径";
+"summary.allocated_detail" = "可见文件已分配空间";
+"summary.logical_detail" = "内容表面长度";
+"summary.item_count" = "项目数量";
+"summary.directory_count" = "%@ 个目录";
+"summary.volume_available" = "可用，共 %@";
+"summary.elapsed" = "扫描耗时";
+"summary.seconds" = "%@ 秒";
+"summary.coverage_warning" = "结果存在未覆盖项";
+"summary.complete" = "扫描完成";
+"volume.reconciliation.positive" = "卷已使用 %@，目录树可归因 %@，尚有 %@ 未归因；通常来自快照、可清除空间、权限受限或系统保留区域。";
+"volume.reconciliation.negative" = "目录分配块合计 %@，比卷已使用 %@ 多 %@；这通常来自 APFS 克隆或共享块，不能把每个文件的分配值简单相加。";
+"volume.reconciliation.title" = "卷容量对账";
+
+"home.scanning.title" = "正在读取文件元数据";
+"home.title" = "看清磁盘空间都去哪了";
+"home.detail" = "逐层查看大目录和大文件，确认后再清理。";
+"home.progress.items" = "%@ 个项目";
+"home.cancel_scan" = "取消扫描";
+"home.startup.title" = "扫描启动磁盘";
+"home.startup.detail" = "分析 Macintosh HD";
+"home.user.title" = "扫描个人目录";
+"home.other.title" = "选择其他目录";
+"home.other.detail" = "外置磁盘或指定文件夹";
+"home.safety" = "默认只读分析；清理操作只会移到废纸篓，并且需要二次确认";
+
+"ranking.scope" = "查看范围";
+"ranking.search" = "搜索名称或路径";
+"ranking.sort" = "排序";
+"ranking.sort.help" = "排序方式";
+"ranking.empty" = "当前没有可显示的项目";
+"ranking.no_match" = "没有匹配的项目";
+"ranking.footer.count" = "显示 %@ 项";
+"ranking.footer.help" = "双击进入目录 · 右键查看更多操作";
+"ranking.aggregate" = "合并显示，统计值仍计入总量";
+"ranking.skipped_volume" = "其他挂载卷，未计入本次扫描";
+"ranking.shared.help" = "此项目与其他路径共享文件数据；删除单个链接不一定释放空间";
+"ranking.unreadable.help" = "目录内容无法读取，显示值可能偏小";
+"ranking.row.help" = "%@\n实际占用：%@\n文件大小：%@";
+
+"sunburst.reveal" = "在 Finder 中显示";
+"sunburst.enter" = "进入此目录";
+"sunburst.none" = "（无选中项）";
+"sunburst.hint" = "双击色块进入目录";

@@ -1,0 +1,36 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+._*
+
+# SwiftPM and Xcode local state
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.o
+*.d
+
+# Local build artifacts
+dist/
+*.dmg
+*.app/
+*.icns
+!Resources/AppIcon.icns
+
+# Local configuration and signing credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.mobileprovision
+
+# Editor temporary files
+*.swp
+*.swo
+*~
