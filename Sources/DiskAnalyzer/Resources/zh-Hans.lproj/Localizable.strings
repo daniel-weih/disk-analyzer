@@ -126,11 +126,31 @@
 "fda.got_it" = "知道了";
 
 "trash.protected" = "这个位置受到保护，不能从应用中移到废纸篓。";
-"trash.moved" = "“%@”已移到废纸篓。重新扫描后会刷新统计。";
+"trash.moved" = "“%@”已移到废纸篓，并已从当前视图的原位置移除。清空废纸篓后才会真正释放磁盘空间。";
+"trash.already_missing" = "“%@”已不在原位置，并已从当前视图移除。建议刷新以核验剩余统计。";
 "trash.failed" = "无法移到废纸篓：%@";
 "trash.dialog.title" = "移到废纸篓？";
 "trash.dialog.action" = "移到废纸篓";
 "trash.dialog.message" = "将“%@”移到废纸篓。此操作可在废纸篓中恢复。";
+"collector.title" = "清理列表";
+"collector.add" = "加入清理列表";
+"collector.remove_item" = "从清理列表移除";
+"collector.queued" = "已加入清理列表";
+"collector.clear" = "清空列表";
+"collector.hide" = "收起";
+"collector.summary" = "%@ 项 · %@";
+"collector.review_detail" = "逐项核对路径；扫描后新增的内容也会随整个目录一起移动。";
+"collector.recoverable" = "可从废纸篓恢复；清空后才释放空间";
+"collector.move_action" = "移到废纸篓";
+"collector.countdown" = "%@ 秒后开始，可取消";
+"collector.moving" = "正在移到废纸篓 %@/%@";
+"collector.keep_open" = "可继续浏览";
+"collector.already_included" = "该项目已包含在“%@”中。";
+"collector.busy" = "正在执行清理，请稍后再扫描。";
+"collector.finish_before_scan" = "清理列表中还有项目。请先执行或清空清理列表。";
+"collector.success.single" = "已移到废纸篓：“%@”";
+"collector.success.multiple" = "已将 %@ 项移到废纸篓";
+"collector.success.missing" = "“%@”已不在原位置，已从结果中隐藏";
 "alert.title" = "磁盘分析";
 "navigation.up.help" = "返回上一级";
 
@@ -144,6 +164,8 @@
 "summary.seconds" = "%@ 秒";
 "summary.coverage_warning" = "结果存在未覆盖项";
 "summary.complete" = "扫描完成";
+"summary.needs_refresh" = "结果待核验";
+"freshness.needs_verification" = "文件系统在本次扫描后发生了变化。陈旧条目已隐藏，但部分总量和排行榜仍可能来自上次快照。";
 "volume.reconciliation.positive" = "卷已使用 %@，目录树可归因 %@，尚有 %@ 未归因；通常来自快照、可清除空间、权限受限或系统保留区域。";
 "volume.reconciliation.negative" = "目录分配块合计 %@，比卷已使用 %@ 多 %@；这通常来自 APFS 克隆或共享块，不能把每个文件的分配值简单相加。";
 "volume.reconciliation.title" = "卷容量对账";
@@ -158,7 +180,7 @@
 "home.user.title" = "扫描个人目录";
 "home.other.title" = "选择其他目录";
 "home.other.detail" = "外置磁盘或指定文件夹";
-"home.safety" = "默认只读分析；清理操作只会移到废纸篓，并且需要二次确认";
+"home.safety" = "默认只读分析；项目会先加入清理列表，倒计时结束后才移到废纸篓";
 
 "ranking.scope" = "查看范围";
 "ranking.search" = "搜索名称或路径";

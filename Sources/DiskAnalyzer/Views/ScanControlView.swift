@@ -43,13 +43,14 @@ struct ScanControlView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .disabled(controller.cleanupPhase.isActive)
                 .help(L10n.text("toolbar.home.help"))
             }
 
             Button(L10n.text("toolbar.choose_directory"), action: onChooseDirectory)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(controller.isScanning)
+                .disabled(controller.isScanning || controller.cleanupPhase.isActive)
 
             Divider()
                 .frame(height: 22)
@@ -92,6 +93,7 @@ struct ScanControlView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .disabled(controller.cleanupPhase.isActive)
             } else {
                 if controller.result != nil {
                     Button(action: onShowLatestResult) {

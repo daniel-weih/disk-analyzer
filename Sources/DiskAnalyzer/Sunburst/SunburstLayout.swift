@@ -22,6 +22,13 @@ enum SunburstLayout {
     static let centerHoleRadius: CGFloat = 0.24
     static let gapFraction: CGFloat = 0.010
 
+    /// The outer edge used by a fully populated four-ring chart.
+    /// Shallower layouts are expanded to this same edge so navigating back to
+    /// an ancestor does not leave the chart compressed around its center.
+    static var maximumOuterRadius: CGFloat {
+        centerHoleRadius + CGFloat(maxDepth) * ringWidth - gapFraction
+    }
+
     static func layout(root: FileNode, metric: SizeMetric, isDarkMode: Bool) -> [SunburstSegment] {
         guard root.bytes(for: metric) > 0 else { return [] }
 
@@ -110,9 +117,34 @@ enum SunburstLayout {
             }
         }
 
+        guard let visibleDepth = result.map(\.depth).max() else { return [] }
+        let normalizedRingWidth = (
+            maximumOuterRadius + gapFraction - centerHoleRadius
+        ) / CGFloat(visibleDepth)
+
+        let normalized = result.map { segment in
+            let innerRadius = centerHoleRadius
+                + CGFloat(segment.ring) * normalizedRingWidth
+            let outerRadius = min(
+                innerRadius + normalizedRingWidth - gapFraction,
+                maximumOuterRadius
+            )
+            return SunburstSegment(
+                id: segment.id,
+                node: segment.node,
+                depth: segment.depth,
+                ring: segment.ring,
+                startAngle: segment.startAngle,
+                endAngle: segment.endAngle,
+                innerRadius: innerRadius,
+                outerRadius: outerRadius,
+                color: segment.color,
+                hue: segment.hue
+            )
+        }
+
         // Sort by depth ascending so Canvas draws inner rings first, outer rings on top
-        result.sort { $0.depth < $1.depth }
-        return result
+        return normalized.sorted { $0.depth < $1.depth }
     }
 
     // MARK: - Color

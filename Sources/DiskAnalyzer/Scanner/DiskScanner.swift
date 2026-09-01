@@ -124,7 +124,8 @@ actor DiskScanner {
                 issues: context.issues
             ),
             largestDirectories: context.largestDirectories.values(),
-            largestFiles: context.largestFiles.values()
+            largestFiles: context.largestFiles.values(),
+            scanOptions: options
         )
     }
 
@@ -404,6 +405,8 @@ actor DiskScanner {
             kind: .directory,
             logicalBytes: accumulator.logicalBytes,
             allocatedBytes: accumulator.allocatedBytes,
+            ownLogicalBytes: accumulator.ownLogicalBytes,
+            ownAllocatedBytes: accumulator.ownAllocatedBytes,
             children: children,
             fileCount: accumulator.fileCount,
             directoryCount: accumulator.directoryCount,

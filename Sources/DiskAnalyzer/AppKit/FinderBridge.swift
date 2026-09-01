@@ -1,4 +1,10 @@
 import AppKit
+import Darwin
+
+enum TrashMoveOutcome: Equatable {
+    case moved(destinationURL: URL?)
+    case alreadyMissing
+}
 
 enum FinderBridge {
     @MainActor
@@ -33,8 +39,20 @@ enum FinderBridge {
         NSWorkspace.shared.open(url)
     }
 
-    static func moveToTrash(_ url: URL) throws {
-        var resultingURL: NSURL?
-        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+    static func moveToTrash(_ url: URL) throws -> TrashMoveOutcome {
+        do {
+            var resultingURL: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+            return .moved(destinationURL: resultingURL as URL?)
+        } catch {
+            guard sourceIsMissing(url) else { throw error }
+            return .alreadyMissing
+        }
+    }
+
+    private static func sourceIsMissing(_ url: URL) -> Bool {
+        var info = stat()
+        if lstat(url.path, &info) == 0 { return false }
+        return errno == ENOENT || errno == ENOTDIR
     }
 }

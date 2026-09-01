@@ -15,6 +15,8 @@ final class FileNode: Identifiable, @unchecked Sendable {
     let kind: Kind
     let logicalBytes: Int64
     let allocatedBytes: Int64
+    let ownLogicalBytes: Int64
+    let ownAllocatedBytes: Int64
     let children: [FileNode]
     let fileCount: Int
     let directoryCount: Int
@@ -64,6 +66,8 @@ final class FileNode: Identifiable, @unchecked Sendable {
         kind: Kind,
         logicalBytes: Int64,
         allocatedBytes: Int64,
+        ownLogicalBytes: Int64? = nil,
+        ownAllocatedBytes: Int64? = nil,
         children: [FileNode] = [],
         fileCount: Int = 0,
         directoryCount: Int = 0,
@@ -77,6 +81,12 @@ final class FileNode: Identifiable, @unchecked Sendable {
         self.kind = kind
         self.logicalBytes = logicalBytes
         self.allocatedBytes = allocatedBytes
+        let childrenLogicalBytes = children.reduce(Int64(0)) { $0 + $1.logicalBytes }
+        let childrenAllocatedBytes = children.reduce(Int64(0)) { $0 + $1.allocatedBytes }
+        self.ownLogicalBytes = ownLogicalBytes
+            ?? max(logicalBytes - childrenLogicalBytes, 0)
+        self.ownAllocatedBytes = ownAllocatedBytes
+            ?? max(allocatedBytes - childrenAllocatedBytes, 0)
         self.children = children
         self.fileCount = fileCount
         self.directoryCount = directoryCount

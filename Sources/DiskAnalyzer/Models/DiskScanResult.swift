@@ -197,6 +197,29 @@ struct DiskScanResult: @unchecked Sendable {
     let diagnostics: ScanDiagnostics
     let largestDirectories: [FileNode]
     let largestFiles: [FileNode]
+    let scanOptions: ScanOptions
+
+    init(
+        root: FileNode,
+        rootURL: URL,
+        volume: VolumeCapacity?,
+        isVolumeRoot: Bool,
+        elapsedSeconds: TimeInterval,
+        diagnostics: ScanDiagnostics,
+        largestDirectories: [FileNode],
+        largestFiles: [FileNode],
+        scanOptions: ScanOptions = .default
+    ) {
+        self.root = root
+        self.rootURL = rootURL
+        self.volume = volume
+        self.isVolumeRoot = isVolumeRoot
+        self.elapsedSeconds = elapsedSeconds
+        self.diagnostics = diagnostics
+        self.largestDirectories = largestDirectories
+        self.largestFiles = largestFiles
+        self.scanOptions = scanOptions
+    }
 
     var scannedAllocatedBytes: Int64 { root.allocatedBytes }
     var scannedLogicalBytes: Int64 { root.logicalBytes }

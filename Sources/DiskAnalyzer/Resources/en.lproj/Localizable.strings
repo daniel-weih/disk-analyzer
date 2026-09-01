@@ -126,11 +126,31 @@
 "fda.got_it" = "Got It";
 
 "trash.protected" = "This location is protected and cannot be moved to Trash from the app.";
-"trash.moved" = "“%@” was moved to Trash. Rescan to update the totals.";
+"trash.moved" = "“%@” was moved to Trash and removed from its original location in this view. Empty Trash to actually free disk space.";
+"trash.already_missing" = "“%@” is no longer at its original location and was removed from this view. Refresh to verify the remaining totals.";
 "trash.failed" = "Could not move the item to Trash: %@";
 "trash.dialog.title" = "Move to Trash?";
 "trash.dialog.action" = "Move to Trash";
 "trash.dialog.message" = "Move “%@” to Trash. The item can be restored from Trash.";
+"collector.title" = "Collector";
+"collector.add" = "Add to Collector";
+"collector.remove_item" = "Remove from Collector";
+"collector.queued" = "Added to Collector";
+"collector.clear" = "Clear";
+"collector.hide" = "Hide";
+"collector.summary" = "%@ items · %@";
+"collector.review_detail" = "Review each path. Content added after the scan moves with the entire folder.";
+"collector.recoverable" = "Recoverable from Trash; space is freed only after it is emptied";
+"collector.move_action" = "Move to Trash";
+"collector.countdown" = "Starting in %@ s — you can cancel";
+"collector.moving" = "Moving to Trash %@/%@";
+"collector.keep_open" = "You can keep browsing";
+"collector.already_included" = "This item is already included in “%@”.";
+"collector.busy" = "Cleanup is in progress. Scan again when it finishes.";
+"collector.finish_before_scan" = "The Collector still has items. Move them or clear the Collector before scanning.";
+"collector.success.single" = "Moved to Trash: “%@”";
+"collector.success.multiple" = "Moved %@ items to Trash";
+"collector.success.missing" = "“%@” was already missing and is now hidden from the result";
 "alert.title" = "Disk Analysis";
 "navigation.up.help" = "Go up one level";
 
@@ -144,6 +164,8 @@
 "summary.seconds" = "%@ s";
 "summary.coverage_warning" = "Some items were not covered";
 "summary.complete" = "Scan complete";
+"summary.needs_refresh" = "Result needs verification";
+"freshness.needs_verification" = "The file system changed after this scan. The stale item is hidden, but some totals and rankings may still reflect the previous snapshot.";
 "volume.reconciliation.positive" = "The volume uses %@. The directory tree accounts for %@, leaving %@ unattributed, usually because of snapshots, purgeable space, protected areas, or system reservations.";
 "volume.reconciliation.negative" = "Allocated blocks total %@, compared with %@ used by the volume, an overlap of %@. APFS clones or shared blocks usually cause this, so per-file allocation cannot be added as ordinary independent usage.";
 "volume.reconciliation.title" = "Volume Reconciliation";
@@ -158,7 +180,7 @@
 "home.user.title" = "Scan Home Folder";
 "home.other.title" = "Choose Another Folder";
 "home.other.detail" = "External disk or selected folder";
-"home.safety" = "Analysis is read-only by default. Cleanup only moves items to Trash and always asks for confirmation.";
+"home.safety" = "Analysis is read-only by default. Items enter the Collector first and move to Trash only after a countdown.";
 
 "ranking.scope" = "View";
 "ranking.search" = "Search name or path";

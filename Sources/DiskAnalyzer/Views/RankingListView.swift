@@ -7,9 +7,13 @@ struct RankingListView: View {
     @Binding var scope: RankingScope
     @Binding var sortOption: SortOption
     @Binding var searchText: String
+    @Binding var selectedNodeID: String?
+    let cleanupNodeIDs: Set<String>
+    let isCleanupActive: Bool
     let onRevealInFinder: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
-    let onMoveToTrash: (FileNode) -> Void
+    let onAddToCleanup: (FileNode) -> Void
+    let onRemoveFromCleanup: (FileNode) -> Void
 
     private var referenceBytes: Int64 {
         if scope == .current {
@@ -39,7 +43,9 @@ struct RankingListView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
-                    .frame(width: 34)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                    .accessibilityLabel(L10n.text("ranking.sort"))
                     .help(L10n.text("ranking.sort.help"))
                 }
             }
@@ -60,34 +66,54 @@ struct RankingListView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                List(Array(nodes.enumerated()), id: \.element.id) { index, node in
-                    RankingRowView(
-                        node: node,
-                        metric: metric,
-                        fraction: Double(node.bytes(for: metric)) / Double(referenceBytes),
-                        hue: nodes.count > 1 ? Double(index) / Double(nodes.count) : 0
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        if node.isDirectory {
-                            onDrillDown(node)
-                        } else if node.canRevealInFinder {
-                            onRevealInFinder(node)
-                        }
-                    }
-                    .contextMenu {
-                        if node.isDirectory {
-                            Button(L10n.text("common.enter_directory")) { onDrillDown(node) }
-                        }
-                        if node.canRevealInFinder {
-                            Button(L10n.text("common.reveal_finder")) { onRevealInFinder(node) }
-                        }
-                        if node.canMoveToTrash {
-                            Divider()
-                            Button(L10n.text("common.move_to_trash"), role: .destructive) {
-                                onMoveToTrash(node)
+                List(selection: $selectedNodeID) {
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                        RankingRowView(
+                            node: node,
+                            metric: metric,
+                            fraction: Double(node.bytes(for: metric)) / Double(referenceBytes),
+                            hue: nodes.count > 1 ? Double(index) / Double(nodes.count) : 0,
+                            isInCleanup: cleanupNodeIDs.contains(node.id)
+                        )
+                        .contentShape(Rectangle())
+                        .tag(node.id)
+                        .simultaneousGesture(TapGesture(count: 1).onEnded {
+                            selectedNodeID = node.id
+                        })
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            if node.isDirectory {
+                                onDrillDown(node)
+                            } else if node.canRevealInFinder {
+                                onRevealInFinder(node)
+                            }
+                        })
+                        .contextMenu {
+                            if node.isDirectory {
+                                Button(L10n.text("common.enter_directory")) { onDrillDown(node) }
+                            }
+                            if node.canRevealInFinder {
+                                Button(L10n.text("common.reveal_finder")) { onRevealInFinder(node) }
+                            }
+                            if node.canMoveToTrash {
+                                Divider()
+                                if cleanupNodeIDs.contains(node.id) {
+                                    Button(L10n.text("collector.remove_item")) {
+                                        onRemoveFromCleanup(node)
+                                    }
+                                    .disabled(isCleanupActive)
+                                } else {
+                                    Button(L10n.text("collector.add")) {
+                                        onAddToCleanup(node)
+                                    }
+                                    .disabled(isCleanupActive)
+                                }
                             }
                         }
+                    }
+                }
+                .onChange(of: nodes.map(\.id)) { visibleIDs in
+                    if let selectedNodeID, !visibleIDs.contains(selectedNodeID) {
+                        self.selectedNodeID = nil
                     }
                 }
                 .listStyle(.plain)
@@ -114,6 +140,7 @@ private struct RankingRowView: View {
     let metric: SizeMetric
     let fraction: Double
     let hue: Double
+    let isInCleanup: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -173,6 +200,13 @@ private struct RankingRowView: View {
                             .font(.system(size: 8))
                             .foregroundStyle(.orange)
                             .help(L10n.text("ranking.unreadable.help"))
+                    }
+
+                    if isInCleanup {
+                        Image(systemName: "tray.full.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.orange)
+                            .help(L10n.text("collector.queued"))
                     }
                 }
 

@@ -12,6 +12,7 @@ struct SunburstView: View {
 
     @State private var segments: [SunburstSegment] = []
     @State private var hoveredID: String?
+    @State private var layoutGeneration = UUID()
 
     init(
         node: FileNode,
@@ -74,9 +75,15 @@ struct SunburstView: View {
                 .frame(height: 24)
         }
         .onAppear { recompute() }
-        .onChange(of: node.id) { _ in recompute() }
-        .onChange(of: metric) { _ in recompute() }
-        .onChange(of: colorScheme) { _ in recompute() }
+        .onChange(of: ObjectIdentifier(node)) { _ in
+            recompute(invalidatingCurrentLayout: true)
+        }
+        .onChange(of: metric) { _ in
+            recompute(invalidatingCurrentLayout: true)
+        }
+        .onChange(of: colorScheme) { _ in
+            recompute(invalidatingCurrentLayout: true)
+        }
     }
 
     // MARK: - Drawing
@@ -209,7 +216,13 @@ struct SunburstView: View {
 
     // MARK: - Recompute
 
-    private func recompute() {
+    private func recompute(invalidatingCurrentLayout: Bool = false) {
+        let generation = UUID()
+        layoutGeneration = generation
+        if invalidatingCurrentLayout {
+            segments = []
+            hoveredID = nil
+        }
         let capturedNode = node
         let capturedMetric = metric
         let isDark = colorScheme == .dark
@@ -219,7 +232,13 @@ struct SunburstView: View {
                 metric: capturedMetric,
                 isDarkMode: isDark
             )
-            await MainActor.run { segments = segs }
+            await MainActor.run {
+                guard layoutGeneration == generation else { return }
+                segments = segs
+                if let hoveredID, !segs.contains(where: { $0.id == hoveredID }) {
+                    self.hoveredID = nil
+                }
+            }
         }
     }
 

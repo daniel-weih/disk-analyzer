@@ -17,6 +17,33 @@ enum RankingScope: String, CaseIterable, Identifiable {
     }
 }
 
+enum CleanupPhase: Equatable, Sendable {
+    case idle
+    case countdown(Int)
+    case moving(completed: Int, total: Int)
+
+    var isActive: Bool { self != .idle }
+
+    var isMoving: Bool {
+        if case .moving = self { return true }
+        return false
+    }
+}
+
+private struct TrashMover: @unchecked Sendable {
+    let operation: (URL) throws -> TrashMoveOutcome
+
+    func callAsFunction(_ url: URL) throws -> TrashMoveOutcome {
+        try operation(url)
+    }
+}
+
+private struct CleanupWorkResult: @unchecked Sendable {
+    let update: SnapshotTrashUpdate?
+    let wasAlreadyMissing: Bool
+    let errorDescription: String?
+}
+
 @MainActor
 final class ScanController: ObservableObject {
     @Published var progress: ScanProgress = .idle
@@ -26,15 +53,29 @@ final class ScanController: ObservableObject {
     @Published var metric: SizeMetric = .allocated
     @Published var rankingScope: RankingScope = .current
     @Published var searchText = ""
-    @Published var pendingTrashNode: FileNode?
+    @Published var selectedRankingNodeID: String?
+    @Published private(set) var cleanupItems: [FileNode] = []
+    @Published private(set) var cleanupPhase: CleanupPhase = .idle
+    @Published var isCleanupCollectorExpanded = false
     @Published var alertMessage: String?
     @Published var noticeMessage: String?
+    @Published private(set) var resultFreshness: ResultFreshness = .scanBacked
     @Published var isShowingHome = false
     @Published private var selectedScanURL: URL?
 
     private let scanner = DiskScanner()
+    private let trashMover: TrashMover
     private var scanTask: Task<Void, Never>?
+    private var cleanupTask: Task<Void, Never>?
+    private var noticeTask: Task<Void, Never>?
     private var activeScanID: UUID?
+    private var suppressedPaths: Set<String> = []
+
+    init(
+        moveToTrash: @escaping (URL) throws -> TrashMoveOutcome = FinderBridge.moveToTrash
+    ) {
+        trashMover = TrashMover(operation: moveToTrash)
+    }
 
     var displayRoot: FileNode? {
         navigationPath.last ?? result?.root
@@ -57,6 +98,14 @@ final class ScanController: ObservableObject {
         return false
     }
 
+    var cleanupNodeIDs: Set<String> {
+        Set(cleanupItems.map(\.id))
+    }
+
+    func cleanupBytes(for metric: SizeMetric) -> Int64 {
+        cleanupItems.reduce(Int64(0)) { $0 + $1.bytes(for: metric) }
+    }
+
     var breadcrumbNodes: [FileNode] {
         guard let root = result?.root else { return [] }
         return [root] + navigationPath
@@ -73,15 +122,19 @@ final class ScanController: ObservableObject {
             source = result?.largestFiles ?? []
         }
 
+        let currentNodes = source.filter { node in
+            guard let path = node.path else { return true }
+            return !suppressedPaths.contains(path)
+        }
         let filtered: [FileNode]
         if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            filtered = source
+            filtered = currentNodes
         } else {
             let query = searchText.folding(
                 options: [.caseInsensitive, .diacriticInsensitive],
                 locale: .current
             )
-            filtered = source.filter { node in
+            filtered = currentNodes.filter { node in
                 let candidate = "\(node.name) \(node.path ?? "")".folding(
                     options: [.caseInsensitive, .diacriticInsensitive],
                     locale: .current
@@ -107,20 +160,43 @@ final class ScanController: ObservableObject {
         startScan(from: url)
     }
 
-    func rescan() {
+    func rescan(completionNotice: String? = nil) {
         guard let url = result?.rootURL else { return }
-        startScan(from: url)
+        startScan(
+            from: url,
+            completionNotice: completionNotice,
+            preservingExistingResult: true
+        )
     }
 
-    func startScan(from url: URL) {
+    func startScan(
+        from url: URL,
+        completionNotice: String? = nil,
+        preservingExistingResult: Bool = false
+    ) {
+        guard !cleanupPhase.isActive else {
+            alertMessage = L10n.text("collector.busy")
+            return
+        }
+        guard cleanupItems.isEmpty else {
+            alertMessage = L10n.text("collector.finish_before_scan")
+            return
+        }
         scanTask?.cancel()
         let scanID = UUID()
+        let previousNavigationPaths = navigationPath.compactMap(\.path)
+        let previousFreshness = resultFreshness
         activeScanID = scanID
         isShowingHome = false
         selectedScanURL = url
-        navigationPath = []
-        result = nil
-        noticeMessage = nil
+        if !preservingExistingResult {
+            navigationPath = []
+            result = nil
+            resultFreshness = .scanBacked
+            suppressedPaths.removeAll()
+            selectedRankingNodeID = nil
+        }
+        dismissNotice()
         progress = ScanProgress(
             scannedItems: 0,
             scannedFiles: 0,
@@ -146,8 +222,21 @@ final class ScanController: ObservableObject {
                 let scanResult = try await operation.task.value
                 guard activeScanID == scanID else { return }
                 result = scanResult
-                rankingScope = .current
-                searchText = ""
+                resultFreshness = .scanBacked
+                suppressedPaths.removeAll()
+                if preservingExistingResult {
+                    navigationPath = reboundNavigationPath(
+                        previousPaths: previousNavigationPaths,
+                        root: scanResult.root
+                    )
+                    reconcileRankingSelection()
+                } else {
+                    rankingScope = .current
+                    searchText = ""
+                }
+                if let completionNotice {
+                    presentNotice(completionNotice)
+                }
                 progress = ScanProgress(
                     scannedItems: scanResult.root.fileCount + scanResult.root.directoryCount,
                     scannedFiles: scanResult.root.fileCount,
@@ -158,19 +247,29 @@ final class ScanController: ObservableObject {
                 )
             } catch is CancellationError {
                 if activeScanID == scanID {
-                    progress = .idle
+                    if preservingExistingResult, let existingResult = result {
+                        resultFreshness = previousFreshness
+                        publishDoneProgress(for: existingResult)
+                    } else {
+                        progress = .idle
+                    }
                 }
             } catch {
                 if activeScanID == scanID {
                     alertMessage = error.localizedDescription
-                    progress = ScanProgress(
-                        scannedItems: 0,
-                        scannedFiles: 0,
-                        scannedDirectories: 0,
-                        allocatedBytes: 0,
-                        currentPath: url.path,
-                        phase: .failed(error.localizedDescription)
-                    )
+                    if preservingExistingResult, let existingResult = result {
+                        resultFreshness = previousFreshness
+                        publishDoneProgress(for: existingResult)
+                    } else {
+                        progress = ScanProgress(
+                            scannedItems: 0,
+                            scannedFiles: 0,
+                            scannedDirectories: 0,
+                            allocatedBytes: 0,
+                            currentPath: url.path,
+                            phase: .failed(error.localizedDescription)
+                        )
+                    }
                 }
             }
         }
@@ -181,11 +280,15 @@ final class ScanController: ObservableObject {
         scanTask?.cancel()
         scanTask = nil
         Task { await scanner.cancel() }
-        progress = .idle
+        if let result {
+            publishDoneProgress(for: result)
+        } else {
+            progress = .idle
+        }
     }
 
     func showHome() {
-        guard !isScanning else { return }
+        guard !isScanning, !cleanupPhase.isActive else { return }
         isShowingHome = true
     }
 
@@ -195,6 +298,7 @@ final class ScanController: ObservableObject {
     }
 
     func drillDown(into node: FileNode) {
+        selectedRankingNodeID = nil
         guard node.isDirectory else {
             FinderBridge.reveal(node.url)
             return
@@ -210,6 +314,7 @@ final class ScanController: ObservableObject {
     }
 
     func navigate(to node: FileNode) {
+        selectedRankingNodeID = nil
         guard let root = result?.root else { return }
         if node.id == root.id {
             navigationPath = []
@@ -223,29 +328,251 @@ final class ScanController: ObservableObject {
     func navigateUp() {
         guard !navigationPath.isEmpty else { return }
         navigationPath.removeLast()
+        selectedRankingNodeID = nil
     }
 
     func reveal(_ node: FileNode) {
         FinderBridge.reveal(node.url)
     }
 
-    func requestMoveToTrash(_ node: FileNode) {
-        guard node.canMoveToTrash else {
+    func addToCleanup(_ node: FileNode) {
+        guard !isScanning, !cleanupPhase.isActive,
+              node.canMoveToTrash,
+              node.id != result?.root.id,
+              let nodePath = node.path else {
             alertMessage = L10n.text("trash.protected")
             return
         }
-        pendingTrashNode = node
+
+        if cleanupItems.contains(where: { $0.id == node.id }) { return }
+        if let containingItem = cleanupItems.first(where: {
+            guard let existingPath = $0.path else { return false }
+            return Self.isPath(nodePath, insideOrEqualTo: existingPath)
+        }) {
+            presentNotice(L10n.text("collector.already_included", containingItem.name))
+            return
+        }
+
+        cleanupItems.removeAll { existing in
+            guard let existingPath = existing.path else { return false }
+            return Self.isPath(existingPath, insideOrEqualTo: nodePath)
+        }
+        cleanupItems.append(node)
+        alertMessage = nil
     }
 
-    func confirmMoveToTrash(_ node: FileNode) {
-        guard let url = node.url, node.canMoveToTrash else { return }
-        do {
-            try FinderBridge.moveToTrash(url)
-            noticeMessage = L10n.text("trash.moved", node.name)
-        } catch {
-            alertMessage = L10n.text("trash.failed", error.localizedDescription)
+    func removeFromCleanup(_ node: FileNode) {
+        guard !cleanupPhase.isActive else { return }
+        cleanupItems.removeAll { $0.id == node.id }
+        if cleanupItems.isEmpty { isCleanupCollectorExpanded = false }
+    }
+
+    func clearCleanup() {
+        guard !cleanupPhase.isActive else { return }
+        cleanupItems.removeAll()
+        isCleanupCollectorExpanded = false
+    }
+
+    func beginCleanupCountdown(seconds: Int = 5) {
+        guard !isScanning, cleanupPhase == .idle, !cleanupItems.isEmpty else { return }
+        let initialSeconds = max(seconds, 1)
+        cleanupPhase = .countdown(initialSeconds)
+        cleanupTask?.cancel()
+        cleanupTask = Task { [weak self] in
+            guard let self else { return }
+            for remaining in stride(from: initialSeconds, through: 1, by: -1) {
+                guard !Task.isCancelled else { return }
+                cleanupPhase = .countdown(remaining)
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    return
+                }
+            }
+            guard !Task.isCancelled else { return }
+            await moveCollectedItemsToTrash()
         }
-        pendingTrashNode = nil
+    }
+
+    func cancelCleanupCountdown() {
+        guard case .countdown = cleanupPhase else { return }
+        cleanupTask?.cancel()
+        cleanupTask = nil
+        cleanupPhase = .idle
+        if cleanupItems.isEmpty { isCleanupCollectorExpanded = false }
+    }
+
+    func moveCollectedItemsToTrash() async {
+        guard !isScanning, !cleanupPhase.isMoving,
+              !cleanupItems.isEmpty, result != nil else { return }
+
+        cleanupTask = nil
+        let itemsToMove = cleanupItems
+        let total = itemsToMove.count
+        var successfulNames: [String] = []
+        var missingCount = 0
+        var firstError: String?
+        cleanupPhase = .moving(completed: 0, total: total)
+
+        for (index, node) in itemsToMove.enumerated() {
+            guard let url = node.url, let currentResult = result else { continue }
+            let mover = trashMover
+            let work = await Task.detached(priority: .userInitiated) {
+                do {
+                    let outcome = try mover(url)
+                    switch outcome {
+                    case .moved(let destinationURL):
+                        return CleanupWorkResult(
+                            update: SnapshotTrashReconciler.moved(
+                                node,
+                                destinationURL: destinationURL,
+                                in: currentResult
+                            ),
+                            wasAlreadyMissing: false,
+                            errorDescription: nil
+                        )
+                    case .alreadyMissing:
+                        return CleanupWorkResult(
+                            update: SnapshotTrashReconciler.alreadyMissing(
+                                node,
+                                in: currentResult
+                            ),
+                            wasAlreadyMissing: true,
+                            errorDescription: nil
+                        )
+                    }
+                } catch {
+                    return CleanupWorkResult(
+                        update: nil,
+                        wasAlreadyMissing: false,
+                        errorDescription: error.localizedDescription
+                    )
+                }
+            }.value
+
+            if let errorDescription = work.errorDescription {
+                firstError = firstError ?? errorDescription
+            } else {
+                alertMessage = nil
+                suppressedPaths.insert(url.standardizedFileURL.path)
+                applyTrashUpdate(work.update)
+                if work.wasAlreadyMissing {
+                    resultFreshness = .needsVerification
+                    missingCount += 1
+                }
+                cleanupItems.removeAll { $0.id == node.id }
+                successfulNames.append(node.name)
+            }
+            cleanupPhase = .moving(completed: index + 1, total: total)
+            await Task.yield()
+        }
+
+        cleanupPhase = .idle
+        if let firstError {
+            alertMessage = L10n.text("trash.failed", firstError)
+        }
+        if !successfulNames.isEmpty {
+            let message: String
+            if successfulNames.count == 1, let name = successfulNames.first {
+                message = L10n.text(
+                    missingCount == 1 ? "collector.success.missing" : "collector.success.single",
+                    name
+                )
+            } else {
+                message = L10n.text("collector.success.multiple", successfulNames.count.formatted())
+            }
+            presentNotice(message)
+        }
+    }
+
+    private func applyTrashUpdate(_ update: SnapshotTrashUpdate?) {
+        guard let update else {
+            resultFreshness = .needsVerification
+            return
+        }
+
+        let wasAlreadyStale = resultFreshness.needsVerification
+        let previousNavigationPaths = navigationPath.compactMap(\.path)
+        result = update.result
+        resultFreshness = wasAlreadyStale ? .needsVerification : update.freshness
+        navigationPath = reboundNavigationPath(
+            previousPaths: previousNavigationPaths,
+            root: update.result.root,
+            sourcePath: update.sourcePath,
+            destinationPath: update.destinationPath
+        )
+        reconcileRankingSelection()
+        publishDoneProgress(for: update.result)
+    }
+
+    private func reconcileRankingSelection() {
+        guard let selectedRankingNodeID else { return }
+        if !rankedNodes.contains(where: { $0.id == selectedRankingNodeID }) {
+            self.selectedRankingNodeID = nil
+        }
+    }
+
+    private func publishDoneProgress(for result: DiskScanResult) {
+        progress = ScanProgress(
+            scannedItems: result.root.fileCount + result.root.directoryCount,
+            scannedFiles: result.root.fileCount,
+            scannedDirectories: result.root.directoryCount,
+            allocatedBytes: result.root.allocatedBytes,
+            currentPath: result.rootURL.path,
+            phase: .done
+        )
+    }
+
+    func dismissNotice() {
+        noticeTask?.cancel()
+        noticeTask = nil
+        noticeMessage = nil
+    }
+
+    private func presentNotice(_ message: String) {
+        noticeTask?.cancel()
+        noticeMessage = message
+        noticeTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 4_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.noticeMessage = nil
+            self?.noticeTask = nil
+        }
+    }
+
+    private func reboundNavigationPath(
+        previousPaths: [String],
+        root: FileNode,
+        sourcePath: String,
+        destinationPath: String?
+    ) -> [FileNode] {
+        for previousPath in previousPaths.reversed() {
+            guard let mappedPath = SnapshotTrashReconciler.mappedPath(
+                previousPath,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath
+            ), let path = pathToNode(path: mappedPath, from: root) else {
+                continue
+            }
+            return Array(path.dropFirst())
+        }
+        return []
+    }
+
+    private func reboundNavigationPath(
+        previousPaths: [String],
+        root: FileNode
+    ) -> [FileNode] {
+        for previousPath in previousPaths.reversed() {
+            if let path = pathToNode(path: previousPath, from: root) {
+                return Array(path.dropFirst())
+            }
+        }
+        return []
     }
 
     private var sortComparator: (FileNode, FileNode) -> Bool {
@@ -273,10 +600,29 @@ final class ScanController: ObservableObject {
         }
     }
 
+    private static func isPath(_ path: String, insideOrEqualTo rootPath: String) -> Bool {
+        let pathComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let rootComponents = URL(fileURLWithPath: rootPath)
+            .standardizedFileURL.pathComponents
+        guard pathComponents.count >= rootComponents.count else { return false }
+        return zip(pathComponents, rootComponents).allSatisfy(==)
+    }
+
     private func pathToNode(_ id: String, from root: FileNode) -> [FileNode]? {
         var stack: [(node: FileNode, path: [FileNode])] = [(root, [root])]
         while let current = stack.popLast() {
             if current.node.id == id { return current.path }
+            for child in current.node.children.reversed() where child.isDirectory {
+                stack.append((child, current.path + [child]))
+            }
+        }
+        return nil
+    }
+
+    private func pathToNode(path targetPath: String, from root: FileNode) -> [FileNode]? {
+        var stack: [(node: FileNode, path: [FileNode])] = [(root, [root])]
+        while let current = stack.popLast() {
+            if current.node.path == targetPath { return current.path }
             for child in current.node.children.reversed() where child.isDirectory {
                 stack.append((child, current.path + [child]))
             }
@@ -403,24 +749,6 @@ struct ContentView: View {
         } message: {
             Text(controller.alertMessage ?? "")
         }
-        .confirmationDialog(
-            L10n.text("trash.dialog.title"),
-            isPresented: Binding(
-                get: { controller.pendingTrashNode != nil },
-                set: { if !$0 { controller.pendingTrashNode = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: controller.pendingTrashNode
-        ) { node in
-            Button(L10n.text("trash.dialog.action"), role: .destructive) {
-                controller.confirmMoveToTrash(node)
-            }
-            Button(L10n.text("common.cancel"), role: .cancel) {
-                controller.pendingTrashNode = nil
-            }
-        } message: { node in
-            Text(L10n.text("trash.dialog.message", node.name))
-        }
     }
 
     private func showPermissionGuide() {
@@ -520,11 +848,15 @@ struct ResultsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ResultSummaryView(result: result, metric: controller.metric)
+            ResultSummaryView(
+                result: result,
+                metric: controller.metric,
+                freshness: controller.resultFreshness
+            )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
 
-            if result.isVolumeRoot {
+            if result.isVolumeRoot && !controller.resultFreshness.needsVerification {
                 VolumeReconciliationView(result: result)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -542,14 +874,10 @@ struct ResultsView: View {
                     .padding(.bottom, 8)
             }
 
-            if let notice = controller.noticeMessage {
-                NoticeBannerView(
-                    message: notice,
-                    onRescan: onRescan,
-                    onDismiss: { controller.noticeMessage = nil }
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+            if controller.resultFreshness.needsVerification {
+                FreshnessBannerView(onRescan: onRescan)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
             }
 
             Divider()
@@ -565,8 +893,15 @@ struct ResultsView: View {
                             metric: controller.metric,
                             onDrillDown: controller.drillDown,
                             onRevealInFinder: controller.reveal,
-                            initialSegments: initialSunburstSegments
+                            initialSegments: ObjectIdentifier(displayRoot)
+                                == ObjectIdentifier(result.root)
+                                ? initialSunburstSegments
+                                : []
                         )
+                        .id(SunburstPresentationIdentity(
+                            root: ObjectIdentifier(displayRoot),
+                            metric: controller.metric.rawValue
+                        ))
                         .padding(14)
                     }
                     .frame(minWidth: 560)
@@ -578,15 +913,43 @@ struct ResultsView: View {
                         scope: $controller.rankingScope,
                         sortOption: $controller.sortOption,
                         searchText: $controller.searchText,
+                        selectedNodeID: $controller.selectedRankingNodeID,
+                        cleanupNodeIDs: controller.cleanupNodeIDs,
+                        isCleanupActive: controller.cleanupPhase.isActive,
                         onRevealInFinder: controller.reveal,
                         onDrillDown: controller.drillDown,
-                        onMoveToTrash: controller.requestMoveToTrash
+                        onAddToCleanup: controller.addToCleanup,
+                        onRemoveFromCleanup: controller.removeFromCleanup
                     )
                     .frame(minWidth: 360, idealWidth: 420, maxWidth: 520)
                 }
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            VStack(alignment: .trailing, spacing: 10) {
+                if let notice = controller.noticeMessage {
+                    CleanupToastView(
+                        message: notice,
+                        onDismiss: controller.dismissNotice
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if !controller.cleanupItems.isEmpty {
+                    CleanupCollectorView(controller: controller)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .padding(16)
+            .animation(.easeInOut(duration: 0.2), value: controller.noticeMessage)
+            .animation(.easeInOut(duration: 0.2), value: controller.cleanupItems.map(\.id))
+        }
     }
+}
+
+private struct SunburstPresentationIdentity: Hashable {
+    let root: ObjectIdentifier
+    let metric: String
 }
 
 private struct NavigationBar: View {
@@ -624,6 +987,7 @@ private struct NavigationBar: View {
 private struct ResultSummaryView: View {
     let result: DiskScanResult
     let metric: SizeMetric
+    let freshness: ResultFreshness
 
     var body: some View {
         let otherMetric: SizeMetric = metric == .allocated ? .logical : .allocated
@@ -678,12 +1042,18 @@ private struct ResultSummaryView: View {
                     result.elapsedSeconds.formatted(.number.precision(.fractionLength(1)))
                 ),
                 detail: L10n.text(
-                    result.diagnostics.hasCoverageWarning
-                        ? "summary.coverage_warning"
-                        : "summary.complete"
+                    freshness.needsVerification
+                        ? "summary.needs_refresh"
+                        : result.diagnostics.hasCoverageWarning
+                            ? "summary.coverage_warning"
+                            : "summary.complete"
                 ),
-                icon: "timer",
-                tint: result.diagnostics.hasCoverageWarning ? .orange : .green
+                icon: freshness.needsVerification
+                    ? "exclamationmark.triangle.fill"
+                    : "timer",
+                tint: freshness.needsVerification || result.diagnostics.hasCoverageWarning
+                    ? .orange
+                    : .green
             )
         }
     }
@@ -943,9 +1313,208 @@ private struct ScanChoiceButton: View {
     }
 }
 
-private struct NoticeBannerView: View {
-    let message: String
+private struct FreshnessBannerView: View {
     let onRescan: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(L10n.text("freshness.needs_verification"))
+                .font(.system(size: 11))
+            Spacer()
+            Button(L10n.text("common.rescan"), action: onRescan)
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .controlSize(.small)
+        }
+        .padding(9)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct CleanupCollectorView: View {
+    @ObservedObject var controller: ScanController
+
+    private var listHeight: CGFloat {
+        min(CGFloat(controller.cleanupItems.count) * 46, 150)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.full.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L10n.text("collector.title"))
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(L10n.text(
+                        "collector.summary",
+                        controller.cleanupItems.count.formatted(),
+                        SizeFormatter.shared.string(
+                            fromByteCount: controller.cleanupBytes(for: controller.metric)
+                        )
+                    ))
+                    .font(.system(size: 9).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    controller.isCleanupCollectorExpanded.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(L10n.text(
+                            controller.isCleanupCollectorExpanded
+                                ? "collector.hide"
+                                : "common.view"
+                        ))
+                        Image(systemName: controller.isCleanupCollectorExpanded
+                            ? "chevron.down"
+                            : "chevron.up")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+
+                if controller.isCleanupCollectorExpanded {
+                    Button(L10n.text("collector.clear"), action: controller.clearCleanup)
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .disabled(controller.cleanupPhase.isActive)
+                }
+            }
+
+            if controller.isCleanupCollectorExpanded {
+                Text(L10n.text("collector.review_detail"))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(controller.cleanupItems) { node in
+                            CleanupCollectorRowView(
+                                node: node,
+                                metric: controller.metric,
+                                isCleanupActive: controller.cleanupPhase.isActive,
+                                onReveal: { controller.reveal(node) },
+                                onRemove: { controller.removeFromCleanup(node) }
+                            )
+
+                            if node.id != controller.cleanupItems.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .frame(height: listHeight)
+            }
+
+            Divider()
+
+            switch controller.cleanupPhase {
+            case .idle:
+                HStack {
+                    Text(L10n.text("collector.recoverable"))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: { controller.beginCleanupCountdown() }) {
+                        Label(L10n.text("collector.move_action"), systemImage: "trash")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+                }
+            case .countdown(let seconds):
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(.orange)
+                    Text(L10n.text("collector.countdown", seconds.formatted()))
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    Spacer()
+                    Button(L10n.text("common.cancel"), action: controller.cancelCleanupCountdown)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            case .moving(let completed, let total):
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L10n.text(
+                        "collector.moving",
+                        min(completed + 1, total).formatted(),
+                        total.formatted()
+                    ))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    Spacer()
+                    Text(L10n.text("collector.keep_open"))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 390)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 16, y: 6)
+        .animation(
+            .easeInOut(duration: 0.18),
+            value: controller.isCleanupCollectorExpanded
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.text("collector.title"))
+    }
+}
+
+private struct CleanupCollectorRowView: View {
+    let node: FileNode
+    let metric: SizeMetric
+    let isCleanupActive: Bool
+    let onReveal: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: node.isDirectory ? "folder.fill" : "doc.fill")
+                .foregroundStyle(.orange)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(node.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(node.path ?? "")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            Spacer(minLength: 6)
+            Text(node.formattedSize(for: metric))
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+            Button(action: onReveal) {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(.borderless)
+            .help(L10n.text("common.reveal_finder"))
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help(L10n.text("collector.remove_item"))
+            .disabled(isCleanupActive)
+        }
+        .frame(height: 44)
+    }
+}
+
+private struct CleanupToastView: View {
+    let message: String
     let onDismiss: () -> Void
 
     var body: some View {
@@ -953,18 +1522,22 @@ private struct NoticeBannerView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             Text(message)
-                .font(.system(size: 11))
-            Spacer()
-            Button(L10n.text("common.rescan"), action: onRescan)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(2)
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
         }
-        .padding(9)
-        .background(Color.green.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 390)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(Color.green.opacity(0.32), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
     }
 }
 

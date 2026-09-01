@@ -436,6 +436,70 @@ struct DiskScannerTests {
     }
 
     @MainActor
+    @Test("Ranking sort menu keeps a readable width in the narrow pane")
+    func rankingSortMenuKeepsReadableWidth() throws {
+        let root = FileNode(
+            path: "/Users/demo",
+            name: "demo",
+            kind: .directory,
+            logicalBytes: 100_000_000_000,
+            allocatedBytes: 100_000_000_000
+        )
+        let view = RankingListView(
+            nodes: [],
+            displayRoot: root,
+            metric: .allocated,
+            scope: .constant(.current),
+            sortOption: .constant(.sizeDescending),
+            searchText: .constant(""),
+            selectedNodeID: .constant(nil),
+            cleanupNodeIDs: [],
+            isCleanupActive: false,
+            onRevealInFinder: { _ in },
+            onDrillDown: { _ in },
+            onAddToCleanup: { _ in },
+            onRemoveFromCleanup: { _ in }
+        )
+        .frame(width: 360, height: 240)
+
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 240)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.displayIfNeeded()
+
+        let popUpButtons = descendants(of: hostingView).compactMap { $0 as? NSPopUpButton }
+        #expect(popUpButtons.count == 1)
+        let sortButton = try #require(popUpButtons.first)
+        #expect(sortButton.frame.width >= 96)
+
+        var ancestor = sortButton.superview
+        var ancestorWidths: [CGFloat] = []
+        while let current = ancestor, current !== hostingView {
+            if current.bounds.width > 0 {
+                ancestorWidths.append(current.bounds.width)
+            }
+            ancestor = current.superview
+        }
+        #expect(ancestorWidths.min() ?? 0 >= sortButton.frame.width - 1)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            let image = try render(view: view, size: CGSize(width: 360, height: 240))
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("ranking-controls-narrow.png")
+            )
+        }
+    }
+
+    @MainActor
     @Test("Skipped volume banner and detail views render")
     func skippedVolumeViewsRender() throws {
         let diagnostics = ScanDiagnostics(
@@ -475,6 +539,102 @@ struct DiskScannerTests {
                 detailImage,
                 to: URL(fileURLWithPath: captureDirectory)
                     .appendingPathComponent("skipped-volumes-detail.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Shallow ancestor sunburst expands to the full chart radius")
+    func shallowAncestorSunburstFillsAvailableRadius() throws {
+        func item(_ name: String, path: String, bytes: Int64) -> FileNode {
+            FileNode(
+                path: path,
+                name: name,
+                kind: .file,
+                logicalBytes: bytes,
+                allocatedBytes: bytes
+            )
+        }
+
+        let workspace = FileNode(
+            path: "/Users/demo/Projects/Workspace",
+            name: "Workspace",
+            kind: .directory,
+            logicalBytes: 98_000_000_000,
+            allocatedBytes: 98_000_000_000,
+            children: [
+                item(
+                    "dataset-primary.bin",
+                    path: "/Users/demo/Projects/Workspace/dataset-primary.bin",
+                    bytes: 52_000_000_000
+                ),
+                item(
+                    "dataset-secondary.bin",
+                    path: "/Users/demo/Projects/Workspace/dataset-secondary.bin",
+                    bytes: 28_000_000_000
+                ),
+                item(
+                    "reference-corpus.bin",
+                    path: "/Users/demo/Projects/Workspace/reference-corpus.bin",
+                    bytes: 18_000_000_000
+                )
+            ]
+        )
+        let ancestor = FileNode(
+            path: "/Users/demo/Projects",
+            name: "Projects",
+            kind: .directory,
+            logicalBytes: 132_000_000_000,
+            allocatedBytes: 132_000_000_000,
+            children: [
+                workspace,
+                FileNode(
+                    path: "/Users/demo/Projects/Automation",
+                    name: "Automation",
+                    kind: .directory,
+                    logicalBytes: 20_000_000_000,
+                    allocatedBytes: 20_000_000_000
+                ),
+                FileNode(
+                    path: "/Users/demo/Projects/Utilities",
+                    name: "Utilities",
+                    kind: .directory,
+                    logicalBytes: 8_000_000_000,
+                    allocatedBytes: 8_000_000_000
+                )
+            ]
+        )
+        let segments = SunburstLayout.layout(
+            root: ancestor,
+            metric: .allocated,
+            isDarkMode: false
+        )
+
+        #expect(segments.map(\.depth).max() == 2)
+        let outerRadius = try #require(segments.map(\.outerRadius).max())
+        #expect(abs(outerRadius - SunburstLayout.maximumOuterRadius) < 0.000_1)
+
+        let view = SunburstView(
+            node: ancestor,
+            metric: .allocated,
+            onDrillDown: { _ in },
+            onRevealInFinder: { _ in },
+            initialSegments: segments
+        )
+        .padding(14)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: 920, height: 460)
+        .environment(\.colorScheme, .light)
+
+        let image = try render(view: view, size: CGSize(width: 920, height: 460))
+        #expect(image.pixelsWide >= 920)
+        #expect(image.pixelsHigh >= 460)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("sunburst-shallow-ancestor.png")
             )
         }
     }
@@ -572,7 +732,10 @@ struct DiskScannerTests {
     @Test("Repository preview renders with privacy-safe sample data")
     func repositoryPreviewRendersWithSampleData() throws {
         let result = makeRepositoryPreviewResult()
-        let controller = ScanController()
+        let controller = ScanController { _ in
+            Issue.record("Collector rendering must not perform a file operation")
+            return .alreadyMissing
+        }
         controller.result = result
         controller.metric = .allocated
 
@@ -617,6 +780,69 @@ struct DiskScannerTests {
                 image,
                 to: URL(fileURLWithPath: captureDirectory)
                     .appendingPathComponent("disk-analyzer-overview.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Cleanup Collector renders compact and expanded review states")
+    func cleanupCollectorRendersAsFloatingReviewPanel() throws {
+        let result = makeRepositoryPreviewResult()
+        let controller = ScanController()
+        controller.result = result
+        controller.metric = .allocated
+        let modelTraining = try #require(findNode(named: "Model Training", in: result.root))
+        let downloads = try #require(findNode(named: "Downloads", in: result.root))
+        controller.addToCleanup(modelTraining)
+        controller.addToCleanup(downloads)
+
+        let preview = ResultsView(
+            controller: controller,
+            result: result,
+            onRescan: {},
+            initialSunburstSegments: SunburstLayout.layout(
+                root: result.root,
+                metric: .allocated,
+                isDarkMode: false
+            )
+        )
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.simplifiedChinese.locale)
+        .environment(\.colorScheme, .light)
+
+        let compactImage = try render(view: preview, size: CGSize(width: 1_040, height: 680))
+        #expect(compactImage.pixelsWide >= 1_040)
+        #expect(compactImage.pixelsHigh >= 680)
+        #expect(controller.cleanupItems.count == 2)
+
+        controller.isCleanupCollectorExpanded = true
+        let expandedImage = try render(view: preview, size: CGSize(width: 1_040, height: 680))
+        #expect(expandedImage.pixelsWide >= 1_040)
+        #expect(expandedImage.pixelsHigh >= 680)
+
+        controller.isCleanupCollectorExpanded = false
+        controller.beginCleanupCountdown()
+        let countdownImage = try render(view: preview, size: CGSize(width: 1_040, height: 680))
+        controller.cancelCleanupCountdown()
+        #expect(countdownImage.pixelsWide >= 1_040)
+        #expect(controller.cleanupPhase == .idle)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                compactImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("cleanup-collector-compact.png")
+            )
+            try writePNG(
+                expandedImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("cleanup-collector-expanded.png")
+            )
+            try writePNG(
+                countdownImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("cleanup-collector-countdown.png")
             )
         }
     }
@@ -718,6 +944,11 @@ struct DiskScannerTests {
         }
         hostingView.cacheDisplay(in: hostingView.bounds, to: image)
         return image
+    }
+
+    @MainActor
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap(descendants)
     }
 
     @MainActor

@@ -4,7 +4,7 @@
 
 Disk Analyzer is a native macOS utility for finding where disk space is going. It combines an interactive multi-ring sunburst chart with sortable directory and file rankings, and distinguishes allocated disk space from logical file size so sparse files and hard links are not presented as deceptively simple totals.
 
-The app can scan the startup disk, the current user's home directory, an external volume, or any selected folder. Results stay on the Mac and can be explored without modifying files; cleanup actions use the system Trash and require confirmation.
+The app can scan the startup disk, the current user's home directory, an external volume, or any selected folder. Results stay on the Mac and can be explored without modifying files. Cleanup items are reviewed in a Collector, wait through a cancellable five-second countdown, and then move to the system Trash.
 
 ## Interface Preview
 
@@ -22,10 +22,10 @@ The app can scan the startup disk, the current user's home directory, an externa
 
 ## Install and Run
 
-Building the latest source locally is recommended. A prebuilt Apple Silicon DMG is also available.
+Build the latest source locally using the steps below.
 
 > [!IMPORTANT]
-> The downloadable app uses an ad-hoc signature and is not notarized by Apple. macOS may warn that it cannot verify the developer. An ad-hoc signature also changes whenever the executable changes, so after replacing the app with a newer build you may need to remove the old DiskAnalyzer entry from **System Settings → Privacy & Security → Full Disk Access**, then add `/Applications/DiskAnalyzer.app` again.
+> The packaging scripts use an ad-hoc signature by default and do not notarize the app with Apple. macOS may warn that it cannot verify the developer. An ad-hoc signature also changes whenever the executable changes, so after replacing the app with a newer build you may need to remove the old DiskAnalyzer entry from **System Settings → Privacy & Security → Full Disk Access**, then add `/Applications/DiskAnalyzer.app` again.
 
 ### Recommended: Build from Source
 
@@ -50,10 +50,6 @@ Build and verify a DMG:
 ./scripts/package_dmg.sh
 open dist/DiskAnalyzer-2.2.0-arm64.dmg
 ```
-
-### Download the DMG
-
-**[Download Disk Analyzer 2.2.0 for Apple Silicon](https://github.com/daniel-weih/disk-analyzer/releases/download/v2.2.0/DiskAnalyzer-2.2.0-arm64.dmg)**
 
 Drag `DiskAnalyzer.app` to **Applications**, eject the installer image, and launch the copy in Applications. If Gatekeeper blocks the first launch, Control-click the app in Finder and choose **Open**.
 
@@ -85,7 +81,7 @@ APFS snapshots, purgeable space, and shared clone extents cannot always be attri
 - No network requests, analytics SDKs, telemetry, accounts, or cloud storage
 - Scan results remain in process memory and are not persisted as a browsing history
 - Scanning reads names, paths, and filesystem metadata; it does not read file contents
-- Cleanup uses the system Trash, remains recoverable, and requires confirmation
+- Cleanup is reviewed in the Collector, has a cancellable five-second countdown, and moves items to the recoverable system Trash
 - System roots such as `/System` and other protected top-level locations cannot be moved to Trash from the app
 
 ## Full Disk Access
