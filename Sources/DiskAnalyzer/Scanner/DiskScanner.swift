@@ -35,7 +35,9 @@ actor DiskScanner {
     ) -> (stream: AsyncStream<ScanProgress>, task: Task<DiskScanResult, Error>) {
         scanTask?.cancel()
 
-        let (stream, continuation) = AsyncStream<ScanProgress>.makeStream()
+        let (stream, continuation) = AsyncStream<ScanProgress>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
         let task = Task.detached(priority: .userInitiated) {
             do {
                 let result = try Self.performScan(
@@ -97,7 +99,7 @@ actor DiskScanner {
 
         let startedAt = Date.timeIntervalSinceReferenceDate
         let context = ScanContext(
-            rootDevice: UInt64(rootStat.st_dev),
+            rootDevice: stableDeviceID(rootStat),
             options: options,
             continuation: continuation
         )
@@ -182,7 +184,7 @@ actor DiskScanner {
                     let isRawDataAlias = rootURL.path == "/"
                         && path == "/System/Volumes/Data"
                     let isOtherVolume = context.options.stayOnVolume
-                        && UInt64(info.st_dev) != context.rootDevice
+                        && stableDeviceID(info) != context.rootDevice
                     let identity = FileIdentity(info)
                     let isDuplicate = context.seenDirectories.contains(identity)
 
@@ -332,8 +334,18 @@ actor DiskScanner {
                 }
 
                 let info = statPointer.pointee
-                let identity = FileIdentity(info)
-                let firstReference = context.seenFiles.insert(identity).inserted
+                let hasMultipleLinks = info.st_nlink > 1
+                let firstReference: Bool
+                if hasMultipleLinks {
+                    firstReference = context.seenHardLinkedFiles
+                        .insert(FileIdentity(info))
+                        .inserted
+                } else {
+                    // A one-link inode cannot appear under another directory
+                    // entry, so retaining it for the entire scan only consumes
+                    // memory without contributing to hard-link deduplication.
+                    firstReference = true
+                }
                 let logical = max(Int64(info.st_size), 0)
                 let childAllocated = firstReference ? allocatedBytes(info) : 0
                 if !firstReference {
@@ -350,7 +362,7 @@ actor DiskScanner {
                     logicalBytes: logical,
                     allocatedBytes: childAllocated,
                     fileCount: 1,
-                    isSharedReference: !firstReference || info.st_nlink > 1
+                    isSharedReference: !firstReference || hasMultipleLinks
                 )
                 parent.addFile(node)
                 context.fileCount += 1
@@ -512,9 +524,13 @@ private struct FileIdentity: Hashable {
     let inode: UInt64
 
     init(_ info: stat) {
-        device = UInt64(info.st_dev)
+        device = stableDeviceID(info)
         inode = UInt64(info.st_ino)
     }
+}
+
+private func stableDeviceID(_ info: stat) -> UInt64 {
+    UInt64(UInt32(bitPattern: info.st_dev))
 }
 
 private final class DirectoryAccumulator {
@@ -568,7 +584,7 @@ private final class ScanContext {
     let largestFiles: BoundedNodeCollector
 
     var seenDirectories: Set<FileIdentity> = []
-    var seenFiles: Set<FileIdentity> = []
+    var seenHardLinkedFiles: Set<FileIdentity> = []
     var fileCount = 0
     var directoryCount = 0
     var scannedAllocatedBytes: Int64 = 0
@@ -607,7 +623,11 @@ private final class ScanContext {
     func report(path: String, force: Bool = false) {
         let itemCount = fileCount + directoryCount
         let now = Date.timeIntervalSinceReferenceDate
-        guard force || itemCount - lastReportedItemCount >= 500 || now - lastReportedAt >= 0.15 else {
+        let itemDelta = itemCount - lastReportedItemCount
+        let elapsed = now - lastReportedAt
+        let batchIsReady = itemDelta >= 500 && elapsed >= 0.15
+        let heartbeatIsDue = elapsed >= 1.0
+        guard force || batchIsReady || heartbeatIsDue else {
             return
         }
         lastReportedItemCount = itemCount

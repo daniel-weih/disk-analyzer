@@ -1,12 +1,252 @@
 import Darwin
 import AppKit
+import DiskStatusCore
 import Foundation
+import ImageIO
+import SwapAnalysisCore
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 @testable import DiskAnalyzer
 
 @Suite("Disk scanner accuracy")
 struct DiskScannerTests {
+    @MainActor
+    @Test("Tool scanners default to the startup disk root")
+    func toolScannersDefaultToStartupDiskRoot() {
+        #expect(LargeFileScanController().rootURL.standardizedFileURL.path == "/")
+        #expect(SimilarImageScanController().rootURL.standardizedFileURL.path == "/")
+    }
+
+    @Test("Large file scan uses a strict decimal MB threshold and ignores symlinks")
+    func largeFileScanThresholdAndTraversalRules() async throws {
+        let fixtureURL = try makeFixture()
+        let outsideURL = try makeFixture()
+        defer {
+            try? FileManager.default.removeItem(at: fixtureURL)
+            try? FileManager.default.removeItem(at: outsideURL)
+        }
+
+        func createSparseFile(named name: String, size: Int64, in root: URL) throws {
+            let url = root.appendingPathComponent(name)
+            let descriptor = Darwin.open(url.path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR)
+            guard descriptor >= 0 else { throw FixtureError.cannotCreateSparseFile }
+            defer { Darwin.close(descriptor) }
+            guard Darwin.ftruncate(descriptor, size) == 0 else {
+                throw FixtureError.cannotCreateSparseFile
+            }
+        }
+
+        try createSparseFile(named: "below.bin", size: 999_999, in: fixtureURL)
+        try createSparseFile(named: "exact.bin", size: 1_000_000, in: fixtureURL)
+        try createSparseFile(named: "above.bin", size: 1_000_001, in: fixtureURL)
+        try createSparseFile(named: "largest.bin", size: 2_000_000, in: fixtureURL)
+        try createSparseFile(named: "outside.bin", size: 3_000_000, in: outsideURL)
+        try FileManager.default.createSymbolicLink(
+            at: fixtureURL.appendingPathComponent("outside-link.bin"),
+            withDestinationURL: outsideURL.appendingPathComponent("outside.bin")
+        )
+
+        #expect(LargeFileThreshold.bytes(forMegabytes: 1) == 1_000_000)
+        #expect(LargeFileThreshold.bytes(forMegabytes: 100) == 100_000_000)
+        #expect(LargeFileThreshold.bytes(forMegabytes: 0) == 1_000_000)
+
+        let scanner = LargeFileScanner()
+        let operation = await scanner.scan(
+            from: fixtureURL,
+            thresholdBytes: LargeFileThreshold.bytes(forMegabytes: 1)
+        )
+        let result = try await operation.task.value
+
+        #expect(result.files.map { $0.url.lastPathComponent } == [
+            "largest.bin",
+            "above.bin"
+        ])
+        #expect(result.files.map(\.logicalBytes) == [2_000_000, 1_000_001])
+        #expect(result.scannedFileCount == 4)
+        #expect(result.scannedDirectoryCount == 1)
+        #expect(result.thresholdBytes == 1_000_000)
+        #expect(result.diagnostics == LargeFileScanDiagnostics())
+
+        var bufferedProgress: [LargeFileScanProgress] = []
+        for await update in operation.stream {
+            bufferedProgress.append(update)
+        }
+        #expect(bufferedProgress.count == 1)
+        guard case .done = try #require(bufferedProgress.first).phase else {
+            Issue.record("The final large-file progress update must be retained")
+            return
+        }
+    }
+
+    @Test("Similar image scan finds transformed copies without following symlinks")
+    func similarImageScanFindsNearDuplicates() async throws {
+        let fixtureURL = try makeFixture()
+        let outsideURL = try makeFixture()
+        defer {
+            try? FileManager.default.removeItem(at: fixtureURL)
+            try? FileManager.default.removeItem(at: outsideURL)
+        }
+
+        let originalURL = fixtureURL.appendingPathComponent("original.png")
+        let resizedURL = fixtureURL.appendingPathComponent("resized.png")
+        let convertedURL = fixtureURL.appendingPathComponent("converted.jpg")
+        let differentURL = fixtureURL.appendingPathComponent("different.png")
+        let brokenURL = fixtureURL.appendingPathComponent("broken.jpg")
+        let outsideImageURL = outsideURL.appendingPathComponent("outside.png")
+
+        try writeFixtureImage(
+            to: originalURL,
+            width: 160,
+            height: 100,
+            style: .reference,
+            type: .png
+        )
+        try writeFixtureImage(
+            to: resizedURL,
+            width: 320,
+            height: 200,
+            style: .reference,
+            type: .png
+        )
+        try writeFixtureImage(
+            to: convertedURL,
+            width: 160,
+            height: 100,
+            style: .reference,
+            type: .jpeg,
+            quality: 0.78
+        )
+        try writeFixtureImage(
+            to: differentURL,
+            width: 160,
+            height: 100,
+            style: .different,
+            type: .png
+        )
+        try Data("not an image".utf8).write(to: brokenURL)
+        try writeFixtureImage(
+            to: outsideImageURL,
+            width: 160,
+            height: 100,
+            style: .reference,
+            type: .png
+        )
+        try FileManager.default.createSymbolicLink(
+            at: fixtureURL.appendingPathComponent("outside-link.png"),
+            withDestinationURL: outsideImageURL
+        )
+
+        #expect(ImageSimilarityThreshold.clampedPercent(40) == 70)
+        #expect(ImageSimilarityThreshold.clampedPercent(110) == 100)
+        #expect(VisionFeatureDistanceThreshold.clamped(-1) == 0)
+        #expect(VisionFeatureDistanceThreshold.clamped(80) == 50)
+        #expect(
+            VisionFeatureDistanceThreshold.clamped(.nan)
+                == VisionFeatureDistanceThreshold.defaultValue
+        )
+        #expect(VisionFeatureSimilarityScale.similarityPercent(forDistance: 0) == 100)
+        #expect(VisionFeatureSimilarityScale.similarityPercent(forDistance: 12.5) == 75)
+        #expect(VisionFeatureSimilarityScale.similarityPercent(forDistance: 50) == 0)
+        #expect(VisionFeatureSimilarityScale.similarityPercent(forDistance: 80) == 0)
+        #expect(
+            VisionFeatureSimilarityScale.distance(forSimilarityPercent: 75) == 12.5
+        )
+        #expect(
+            VisionFeatureSimilarityScale.distance(forSimilarityPercent: 100) == 0
+        )
+        #expect(
+            VisionFeatureSimilarityScale.distance(forSimilarityPercent: -10) == 50
+        )
+
+        let scanner = SimilarImageScanner()
+        let operation = await scanner.scan(
+            from: fixtureURL,
+            similarityPercent: ImageSimilarityThreshold.defaultPercent
+        )
+        let result = try await operation.task.value
+
+        #expect(result.similarityPercent == 90)
+        #expect(result.scannedFileCount == 5)
+        #expect(result.candidateImageCount == 5)
+        #expect(result.analyzedImageCount == 4)
+        #expect(result.diagnostics.imageDecodeErrorCount == 1)
+        #expect(result.diagnostics.unreadableDirectoryCount == 0)
+        #expect(result.diagnostics.metadataErrorCount == 0)
+        #expect(result.groups.count == 1)
+
+        let group = try #require(result.groups.first)
+        let groupedNames = Set(group.members.map { $0.item.url.lastPathComponent })
+        #expect(groupedNames == Set(["original.png", "resized.png", "converted.jpg"]))
+        #expect(group.members.first?.item.url.lastPathComponent == "resized.png")
+        #expect(group.members.first?.isReference == true)
+        #expect(group.members.dropFirst().allSatisfy { member in
+            guard case let .perceptualSimilarity(value) = member.score else {
+                return false
+            }
+            return value >= 0.9
+        })
+        #expect(!groupedNames.contains("different.png"))
+        #expect(!groupedNames.contains("outside-link.png"))
+
+        var bufferedProgress: [SimilarImageScanProgress] = []
+        for await update in operation.stream {
+            bufferedProgress.append(update)
+        }
+        #expect(bufferedProgress.count == 1)
+        #expect(bufferedProgress.first?.phase == .done)
+
+        let visionOperation = await scanner.scan(
+            from: fixtureURL,
+            configuration: SimilarImageScanConfiguration(
+                method: .appleVision,
+                visionMaximumDistance: VisionFeatureDistanceThreshold.defaultValue
+            )
+        )
+        let visionResult = try await visionOperation.task.value
+        #expect(visionResult.configuration.method == .appleVision)
+        #expect(visionResult.scannedFileCount == 5)
+        #expect(visionResult.candidateImageCount == 5)
+        #expect(visionResult.analyzedImageCount == 4)
+        #expect(visionResult.diagnostics.imageDecodeErrorCount == 1)
+        #expect(visionResult.groups.count == 1)
+
+        let visionGroup = try #require(visionResult.groups.first)
+        let visionNames = Set(visionGroup.members.map { $0.item.url.lastPathComponent })
+        #expect(visionNames == Set(["original.png", "resized.png", "converted.jpg"]))
+        #expect(visionGroup.members.first?.item.url.lastPathComponent == "resized.png")
+        #expect(visionGroup.members.dropFirst().allSatisfy { member in
+            guard case let .visionDistance(value) = member.score else {
+                return false
+            }
+            return value <= VisionFeatureDistanceThreshold.defaultValue
+        })
+        #expect(!visionNames.contains("different.png"))
+        #expect(!visionNames.contains("outside-link.png"))
+    }
+
+    @Test("Progress stream retains only the latest update for a delayed UI")
+    func progressStreamDropsStaleBufferedUpdates() async throws {
+        let fixtureURL = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+
+        let scanner = DiskScanner()
+        let operation = await scanner.scan(from: fixtureURL)
+        _ = try await operation.task.value
+
+        var bufferedUpdates: [ScanProgress] = []
+        for await update in operation.stream {
+            bufferedUpdates.append(update)
+        }
+
+        #expect(bufferedUpdates.count == 1)
+        let finalUpdate = try #require(bufferedUpdates.first)
+        guard case .done = finalUpdate.phase else {
+            Issue.record("The newest buffered progress update must be the completed state")
+            return
+        }
+    }
+
     @Test("Allocated and logical totals match lstat metadata")
     func allocatedAndLogicalTotalsMatchFileSystemMetadata() async throws {
         let fixtureURL = try makeFixture()
@@ -286,7 +526,49 @@ struct DiskScannerTests {
     @Test("English and Simplified Chinese localization tables are available")
     func localizationTablesAreAvailable() {
         #expect(L10n.text("app.title", language: .english) == "Disk Analyzer")
-        #expect(L10n.text("app.title", language: .simplifiedChinese) == "磁盘空间分析")
+        #expect(L10n.text("app.title", language: .simplifiedChinese) == "磁盘分析")
+        #expect(L10n.text("analysis.mode.status", language: .english) == "Disk Status")
+        #expect(L10n.text("analysis.mode.status", language: .simplifiedChinese) == "磁盘状态")
+        #expect(L10n.text("analysis.mode.tools", language: .english) == "Tools")
+        #expect(L10n.text("analysis.mode.tools", language: .simplifiedChinese) == "工具")
+        #expect(L10n.text("large_files.title", language: .english) == "Large File Finder")
+        #expect(L10n.text("large_files.title", language: .simplifiedChinese) == "大文件扫描")
+        #expect(L10n.text("similar_images.title", language: .english) == "Similar Image Finder")
+        #expect(L10n.text("similar_images.title", language: .simplifiedChinese) == "相似图片扫描")
+        #expect(L10n.text(
+            "similar_images.method.vision",
+            language: .english
+        ) == "Apple Vision")
+        #expect(L10n.text(
+            "similar_images.method.perceptual",
+            language: .simplifiedChinese
+        ) == "近似副本")
+        #expect(L10n.text(
+            "large_files.empty.detail",
+            language: .english,
+            "100"
+        ).contains("100 MB"))
+        #expect(L10n.text(
+            "large_files.empty.detail",
+            language: .simplifiedChinese,
+            "100"
+        ).contains("100 MB"))
+        #expect(L10n.text(
+            "similar_images.empty.detail",
+            language: .english,
+            "90"
+        ).contains("90%"))
+        #expect(L10n.text(
+            "similar_images.empty.detail",
+            language: .simplifiedChinese,
+            "90"
+        ).contains("90%"))
+        #expect(L10n.text(
+            "similar_images.empty.vision.detail",
+            language: .english,
+            "12.5"
+        ).contains("12.5"))
+        #expect(AnalysisMode.allCases.last == .tools)
         #expect(L10n.text(
             "toolbar.items",
             language: .english,
@@ -299,6 +581,20 @@ struct DiskScannerTests {
         ) == "12 个项目")
         #expect(L10n.text("settings.language.title", language: .english) == "Interface Language")
         #expect(L10n.text("settings.language.title", language: .simplifiedChinese) == "界面语言")
+        #expect(L10n.text("swap.title", language: .english) == "Swap Space Analysis")
+        #expect(L10n.text("swap.title", language: .simplifiedChinese) == "交换空间分析")
+        #expect(L10n.text("smart.title", language: .english) == "S.M.A.R.T. Health")
+        #expect(L10n.text("smart.title", language: .simplifiedChinese) == "S.M.A.R.T. 健康")
+        #expect(L10n.text("smart.install.title", language: .english) == "Install smartmontools")
+        #expect(L10n.text("smart.install.title", language: .simplifiedChinese) == "安装 smartmontools")
+        #expect(!L10n.text(
+            "swap.accounting.notice",
+            language: .english
+        ).contains("swap.accounting.notice"))
+        #expect(!L10n.text(
+            "swap.accounting.notice",
+            language: .simplifiedChinese
+        ).contains("swap.accounting.notice"))
     }
 
     @Test("Language selection prefers an explicit preview override and otherwise persists")
@@ -385,8 +681,57 @@ struct DiskScannerTests {
     }
 
     @MainActor
-    @Test("Home navigation controls remain visible at the minimum window width")
-    func homeNavigationControlsRemainVisible() throws {
+    @Test("Rescan releases the previous result tree before building its replacement")
+    func rescanReleasesPreviousResultTree() {
+        let rootURL = URL(
+            fileURLWithPath: "/tmp/disk-analyzer-rescan-memory-fixture",
+            isDirectory: true
+        )
+        let child = FileNode(
+            path: rootURL.appendingPathComponent("nested", isDirectory: true).path,
+            name: "nested",
+            kind: .directory,
+            logicalBytes: 4_096,
+            allocatedBytes: 4_096
+        )
+        let root = FileNode(
+            path: rootURL.path,
+            name: "fixture",
+            kind: .directory,
+            logicalBytes: 8_192,
+            allocatedBytes: 8_192,
+            children: [child]
+        )
+        let controller = ScanController()
+        controller.result = DiskScanResult(
+            root: root,
+            rootURL: rootURL,
+            volume: nil,
+            isVolumeRoot: false,
+            elapsedSeconds: 1,
+            diagnostics: ScanDiagnostics(
+                unreadableDirectoryCount: 0,
+                metadataErrorCount: 0,
+                duplicateDirectoryCount: 0,
+                duplicateFileCount: 0
+            ),
+            largestDirectories: [child],
+            largestFiles: []
+        )
+        controller.navigationPath = [child]
+
+        controller.rescan()
+
+        #expect(controller.result == nil)
+        #expect(controller.navigationPath.isEmpty)
+        #expect(controller.currentScanURL?.path == rootURL.path)
+        #expect(controller.isScanning)
+        controller.cancelScan()
+    }
+
+    @MainActor
+    @Test("Result context controls remain visible at the minimum window width")
+    func resultContextControlsRemainVisible() throws {
         let root = FileNode(
             path: "/Users/demo",
             name: "demo",
@@ -417,21 +762,11 @@ struct DiskScannerTests {
             size: CGSize(width: 1_040, height: 60)
         )
 
-        controller.showHome()
-
-        let homeToolbar = navigationToolbar(for: controller)
-        let homeImage = try render(
-            view: homeToolbar,
-            size: CGSize(width: 1_040, height: 60)
-        )
-
         #expect(resultImage.pixelsWide >= 1_040)
-        #expect(homeImage.pixelsWide >= 1_040)
 
         if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
             let directory = URL(fileURLWithPath: captureDirectory)
             try writePNG(resultImage, to: directory.appendingPathComponent("result-toolbar.png"))
-            try writePNG(homeImage, to: directory.appendingPathComponent("home-toolbar.png"))
         }
     }
 
@@ -740,15 +1075,18 @@ struct DiskScannerTests {
         controller.metric = .allocated
 
         let preview = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.diskSpace),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
             ScanControlView(
                 controller: controller,
-                onShowHome: {},
-                onShowLatestResult: {},
-                onScanStartupDisk: {},
-                onScanHomeDirectory: {},
                 onChooseDirectory: {},
-                onRescan: {},
-                onShowSettings: {}
+                onRescan: {}
             )
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -780,6 +1118,508 @@ struct DiskScannerTests {
                 image,
                 to: URL(fileURLWithPath: captureDirectory)
                     .appendingPathComponent("disk-analyzer-overview.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Tools stays last in the navigation and renders at minimum size")
+    func toolsRendersAtMinimumWindowSize() throws {
+        let rootURL = URL(fileURLWithPath: "/Users/example", isDirectory: true)
+        let result = LargeFileScanResult(
+            rootURL: rootURL,
+            thresholdBytes: 100_000_000,
+            files: [
+                LargeFileMatch(
+                    url: rootURL.appendingPathComponent("Movies/Archive.mov"),
+                    logicalBytes: 8_400_000_000,
+                    allocatedBytes: 8_100_000_000
+                ),
+                LargeFileMatch(
+                    url: rootURL.appendingPathComponent("Models/model.safetensors"),
+                    logicalBytes: 4_200_000_000,
+                    allocatedBytes: 4_200_001_536
+                ),
+                LargeFileMatch(
+                    url: rootURL.appendingPathComponent("Downloads/installer.dmg"),
+                    logicalBytes: 1_480_000_000,
+                    allocatedBytes: 1_480_003_584
+                ),
+                LargeFileMatch(
+                    url: rootURL.appendingPathComponent("Videos/demo.mp4"),
+                    logicalBytes: 780_000_000,
+                    allocatedBytes: 780_001_280
+                ),
+                LargeFileMatch(
+                    url: rootURL.appendingPathComponent("Documents/data.jsonl"),
+                    logicalBytes: 320_000_000,
+                    allocatedBytes: 320_004_096
+                )
+            ],
+            scannedFileCount: 182_431,
+            scannedDirectoryCount: 24_618,
+            elapsedSeconds: 12.84,
+            diagnostics: LargeFileScanDiagnostics()
+        )
+        let controller = LargeFileScanController(
+            rootURL: rootURL,
+            thresholdMegabytes: 100,
+            result: result
+        )
+        let similarImageController = SimilarImageScanController(rootURL: rootURL)
+        let preview = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.tools),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
+            ToolsView(
+                largeFileController: controller,
+                similarImageController: similarImageController,
+                selection: .constant(.largeFiles)
+            )
+        }
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.current.locale)
+        .environment(\.colorScheme, .light)
+
+        let image = try render(view: preview, size: CGSize(width: 1_040, height: 680))
+        #expect(image.pixelsWide >= 1_040)
+        #expect(image.pixelsHigh >= 680)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("tools.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Similar image results remain readable at the minimum window size")
+    func similarImageResultsRenderAtMinimumWindowSize() throws {
+        let rootURL = URL(fileURLWithPath: "/Users/example/Pictures", isDirectory: true)
+        func item(
+            _ name: String,
+            bytes: Int64,
+            width: Int,
+            height: Int,
+            color: (UInt8, UInt8, UInt8)
+        ) -> SimilarImageItem {
+            SimilarImageItem(
+                url: rootURL.appendingPathComponent(name),
+                logicalBytes: bytes,
+                pixelWidth: width,
+                pixelHeight: height,
+                thumbnailRGBA: previewThumbnailRGBA(
+                    red: color.0,
+                    green: color.1,
+                    blue: color.2
+                )
+            )
+        }
+
+        let groups = [
+            SimilarImageGroup(members: [
+                SimilarImageMember(
+                    item: item(
+                        "Mountain-original.png",
+                        bytes: 12_400_000,
+                        width: 6_000,
+                        height: 4_000,
+                        color: (42, 126, 224)
+                    ),
+                    score: .visionDistance(0),
+                    isReference: true
+                ),
+                SimilarImageMember(
+                    item: item(
+                        "Mountain-export.jpg",
+                        bytes: 3_800_000,
+                        width: 3_000,
+                        height: 2_000,
+                        color: (46, 130, 220)
+                    ),
+                    score: .visionDistance(2.58),
+                    isReference: false
+                ),
+                SimilarImageMember(
+                    item: item(
+                        "Mountain-small.webp",
+                        bytes: 840_000,
+                        width: 1_200,
+                        height: 800,
+                        color: (48, 132, 218)
+                    ),
+                    score: .visionDistance(3.64),
+                    isReference: false
+                )
+            ]),
+            SimilarImageGroup(members: [
+                SimilarImageMember(
+                    item: item(
+                        "Poster-master.tiff",
+                        bytes: 28_600_000,
+                        width: 4_000,
+                        height: 5_000,
+                        color: (231, 105, 53)
+                    ),
+                    score: .visionDistance(0),
+                    isReference: true
+                ),
+                SimilarImageMember(
+                    item: item(
+                        "Poster-copy.heic",
+                        bytes: 5_200_000,
+                        width: 2_000,
+                        height: 2_500,
+                        color: (226, 108, 57)
+                    ),
+                    score: .visionDistance(4.2),
+                    isReference: false
+                )
+            ])
+        ]
+        let result = SimilarImageScanResult(
+            rootURL: rootURL,
+            configuration: SimilarImageScanConfiguration(
+                method: .appleVision,
+                visionMaximumDistance: VisionFeatureDistanceThreshold.defaultValue
+            ),
+            groups: groups,
+            scannedFileCount: 18_420,
+            candidateImageCount: 2_316,
+            analyzedImageCount: 2_312,
+            elapsedSeconds: 9.42,
+            diagnostics: SimilarImageScanDiagnostics()
+        )
+        let largeFileController = LargeFileScanController(rootURL: rootURL)
+        let similarImageController = SimilarImageScanController(
+            rootURL: rootURL,
+            similarityPercent: 90,
+            result: result
+        )
+        let preview = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.tools),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
+            ToolsView(
+                largeFileController: largeFileController,
+                similarImageController: similarImageController,
+                selection: .constant(.similarImages)
+            )
+        }
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.current.locale)
+        .environment(\.colorScheme, .light)
+
+        let image = try render(view: preview, size: CGSize(width: 1_040, height: 680))
+        #expect(image.pixelsWide >= 1_040)
+        #expect(image.pixelsHigh >= 680)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("similar-images.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Disk status remains readable at the minimum window size")
+    func diskStatusRendersAtMinimumWindowSize() throws {
+        let capturedAt = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let volume = DiskVolumeMetrics(
+            name: "Sample SSD",
+            mountPath: "/",
+            totalBytes: 500_000_000_000,
+            availableBytes: 83_600_000_000,
+            volumeBSDName: "disk3s1",
+            physicalBSDName: "disk0"
+        )
+        let coverage = DiskIOCoverage(
+            discoveredProcesses: 650,
+            readableProcesses: 396,
+            permissionDeniedProcesses: 246,
+            vanishedProcesses: 7,
+            unavailableProcesses: 1
+        )
+        let processRates = [
+            previewProcessDiskRate(1, "Sample Browser", 2_900_000, 680_000),
+            previewProcessDiskRate(2, "Video Editor", 1_250_000, 2_100_000),
+            previewProcessDiskRate(3, "Developer Tools", 920_000, 410_000),
+            previewProcessDiskRate(4, "Cloud Sync", 180_000, 840_000),
+            previewProcessDiskRate(5, "Search Indexer", 610_000, 90_000),
+            previewProcessDiskRate(6, "Notes", 120_000, 70_000)
+        ]
+        let snapshot = DiskIOSnapshot(
+            capturedAt: capturedAt,
+            scanDuration: 0.08,
+            volume: volume,
+            device: DiskDeviceCounters(
+                bytesRead: 300_000_000_000,
+                bytesWritten: 200_000_000_000
+            ),
+            processes: [],
+            coverage: coverage
+        )
+        let rates = DiskIORates(
+            interval: 1,
+            deviceReadBytesPerSecond: 8_400_000,
+            deviceWriteBytesPerSecond: 4_200_000,
+            processes: processRates
+        )
+        let smartHealth = SMARTHealthSnapshot(
+            capturedAt: capturedAt,
+            deviceBSDName: "disk0",
+            executablePath: "/opt/example/smartctl",
+            overallPassed: true,
+            criticalWarning: 0,
+            temperatureCelsius: 32,
+            availableSparePercent: 100,
+            availableSpareThresholdPercent: 10,
+            percentageUsed: 3,
+            dataUnitsRead: 80_000_000,
+            dataUnitsWritten: 48_000_000,
+            hostReadCommands: 1_200_000_000,
+            hostWriteCommands: 900_000_000,
+            controllerBusyTimeMinutes: 120,
+            powerCycles: 160,
+            powerOnHours: 2_400,
+            unsafeShutdowns: 2,
+            mediaAndDataIntegrityErrors: 0,
+            errorInformationLogEntries: 0
+        )
+        var history: [DiskIOHistoryPoint] = []
+        for index in 0..<13 {
+            let timestamp = capturedAt.addingTimeInterval(Double(index - 12) * 5)
+            let readRate = Double((index * 791_113) % 16_000_000)
+            let writeRate = Double((index * 431_177) % 9_000_000)
+            history.append(DiskIOHistoryPoint(
+                timestamp: timestamp,
+                readBytesPerSecond: readRate,
+                writeBytesPerSecond: writeRate
+            ))
+        }
+        let monitor = DiskStatusMonitor(
+            snapshot: snapshot,
+            rates: rates,
+            history: history,
+            isMonitoring: true,
+            smartHealth: smartHealth,
+            isSMARTToolInstalled: true
+        )
+        let view = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.diskStatus),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
+            DiskStatusView(monitor: monitor, startsAutomatically: false)
+        }
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.current.locale)
+
+        let image = try render(view: view, size: CGSize(width: 1_040, height: 680))
+        #expect(image.pixelsWide >= 1_040)
+        #expect(image.pixelsHigh >= 680)
+
+        let smartDetails = SMARTHealthDetailsView(
+            snapshot: smartHealth,
+            errorMessage: nil
+        )
+        .frame(width: 720, height: 320)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, AppLanguage.current.locale)
+        .environment(\.colorScheme, .light)
+        let smartDetailsImage = try render(
+            view: smartDetails,
+            size: CGSize(width: 720, height: 320)
+        )
+        #expect(smartDetailsImage.pixelsWide >= 720)
+        #expect(smartDetailsImage.pixelsHigh >= 320)
+
+        let noSMARTMonitor = DiskStatusMonitor(
+            snapshot: snapshot,
+            rates: rates,
+            history: history,
+            isMonitoring: true,
+            smartHealth: nil,
+            isSMARTToolInstalled: false
+        )
+        let noSMARTView = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.diskStatus),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
+            DiskStatusView(monitor: noSMARTMonitor, startsAutomatically: false)
+        }
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.current.locale)
+        let noSMARTImage = try render(
+            view: noSMARTView,
+            size: CGSize(width: 1_040, height: 680)
+        )
+        #expect(noSMARTImage.pixelsWide >= 1_040)
+        #expect(noSMARTImage.pixelsHigh >= 680)
+
+        let installHelp = SMARTInstallHelpView(onRecheck: { false })
+            .frame(width: 420, height: 270)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.locale, AppLanguage.current.locale)
+            .environment(\.colorScheme, .light)
+        let installHelpImage = try render(
+            view: installHelp,
+            size: CGSize(width: 420, height: 270)
+        )
+        #expect(installHelpImage.pixelsWide >= 420)
+        #expect(installHelpImage.pixelsHigh >= 270)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("disk-status.png")
+            )
+            try writePNG(
+                smartDetailsImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("smart-health-details.png")
+            )
+            try writePNG(
+                noSMARTImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("disk-status-no-smartctl.png")
+            )
+            try writePNG(
+                installHelpImage,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("smart-install-help.png")
+            )
+        }
+    }
+
+    @MainActor
+    @Test("Swap analysis remains readable at the minimum window size")
+    func swapAnalysisRendersAtMinimumWindowSize() throws {
+        let groupSpecs: [(String, UInt64, UInt64, UInt64)] = [
+            ("Sample Browser", 1_100_000_000, 2_400_000_000, 1_200_000_000),
+            ("Creative Studio Helper", 700_000_000, 1_500_000_000, 900_000_000),
+            ("Chat Client", 500_000_000, 1_100_000_000, 720_000_000),
+            ("Developer Tools", 300_000_000, 680_000_000, 610_000_000),
+            ("Background Service", 200_000_000, 440_000_000, 300_000_000),
+            ("Notes", 100_000_000, 220_000_000, 180_000_000),
+            ("Small Utility", 50_000_000, 110_000_000, 90_000_000)
+        ]
+        let groups = groupSpecs.enumerated().map { index, spec in
+            let bundlePath = "/Applications/\(spec.0).app"
+            let process = ProcessMemorySample(
+                id: Int32(42 + index),
+                parentPID: 1,
+                processName: "\(spec.0) Helper",
+                executablePath: "\(bundlePath)/Contents/MacOS/\(spec.0)",
+                applicationKey: "app:\(bundlePath)",
+                applicationName: spec.0,
+                applicationBundlePath: bundlePath,
+                compressorBackedBytes: spec.2,
+                residentBytes: spec.3,
+                virtualBytes: 8_000_000_000,
+                regionCount: 320,
+                usesTranslatedArchitecture: false
+            )
+            return ApplicationMemoryGroup(
+                id: process.applicationKey,
+                name: process.applicationName,
+                bundlePath: process.applicationBundlePath,
+                estimatedSwapBytes: spec.1,
+                compressorBackedBytes: process.compressorBackedBytes,
+                residentBytes: process.residentBytes,
+                processes: [process]
+            )
+        }
+        let attributedSwapBytes = groups.reduce(UInt64(0)) {
+            $0 + $1.estimatedSwapBytes
+        }
+        let capturedAt = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let snapshot = SwapSnapshot(
+            capturedAt: capturedAt,
+            scanDuration: 1.24,
+            system: SystemMemoryMetrics(
+                physicalMemoryBytes: 32_000_000_000,
+                swapTotalBytes: 8_000_000_000,
+                swapUsedBytes: 3_200_000_000,
+                swapFreeBytes: 4_800_000_000,
+                compressorStorageBytes: 4_000_000_000,
+                compressorUncompressedBytes: 6_000_000_000,
+                swapInsPages: 10_000,
+                swapOutsPages: 12_000,
+                kernelPageSize: 16_384
+            ),
+            coverage: ScanCoverage(
+                discoveredProcesses: 650,
+                readableProcesses: 430,
+                permissionDeniedProcesses: 210,
+                vanishedProcesses: 8,
+                unavailableProcesses: 2,
+                regionLimitProcesses: 0
+            ),
+            groups: groups,
+            attributedSwapBytes: attributedSwapBytes,
+            unattributedSwapBytes: 3_200_000_000 - attributedSwapBytes
+        )
+        let history = [
+            // Swap capacity can shrink between samples. Keep an older value above
+            // the current total to exercise the chart's history-aware scale.
+            SwapHistoryPoint(timestamp: capturedAt.addingTimeInterval(-90), usedBytes: 9_400_000_000),
+            SwapHistoryPoint(timestamp: capturedAt.addingTimeInterval(-60), usedBytes: 9_200_000_000),
+            SwapHistoryPoint(timestamp: capturedAt.addingTimeInterval(-30), usedBytes: 5_000_000_000),
+            SwapHistoryPoint(timestamp: capturedAt, usedBytes: 3_200_000_000)
+        ]
+        let monitor = SwapMonitor(snapshot: snapshot, history: history)
+        monitor.selectedGroupID = groups.first?.id
+        let view = VStack(spacing: 0) {
+            AnalysisNavigationBar(
+                selection: .constant(.swapSpace),
+                onShowHome: {},
+                onShowSettings: {}
+            )
+
+            Divider()
+
+            SwapAnalysisView(
+                monitor: monitor,
+                startsAutomatically: false
+            )
+        }
+        .frame(width: 1_040, height: 680)
+        .environment(\.locale, AppLanguage.current.locale)
+
+        let image = try render(view: view, size: CGSize(width: 1_040, height: 680))
+        #expect(image.pixelsWide >= 1_040)
+        #expect(image.pixelsHigh >= 680)
+
+        if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(
+                image,
+                to: URL(fileURLWithPath: captureDirectory)
+                    .appendingPathComponent("swap-analysis.png")
             )
         }
     }
@@ -851,32 +1691,25 @@ struct DiskScannerTests {
     @Test("Repository home preview renders with privacy-safe sample data")
     func repositoryHomePreviewRendersWithSampleData() throws {
         let controller = ScanController()
-        controller.result = makeRepositoryPreviewResult()
-        controller.showHome()
 
         let preview = VStack(spacing: 0) {
-            ScanControlView(
-                controller: controller,
+            AnalysisNavigationBar(
+                selection: .constant(nil),
                 onShowHome: {},
-                onShowLatestResult: {},
-                onScanStartupDisk: {},
-                onScanHomeDirectory: {},
-                onChooseDirectory: {},
-                onRescan: {},
                 onShowSettings: {}
             )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(.bar)
 
             Divider()
+
             EmptyStateView(
                 controller: controller,
                 fullDiskAccessConfirmationStatus: .confirmed,
                 onShowPermissionGuide: {},
+                onShowLatestResult: {},
                 onScanStartupDisk: {},
                 onScanHomeDirectory: {},
                 onChooseDirectory: {},
+                onShowSwapAnalysis: {},
                 homeDirectoryPath: "/Users/Sample"
             )
         }
@@ -955,13 +1788,8 @@ struct DiskScannerTests {
     private func navigationToolbar(for controller: ScanController) -> some View {
         ScanControlView(
             controller: controller,
-            onShowHome: controller.showHome,
-            onShowLatestResult: controller.showLatestResult,
-            onScanStartupDisk: {},
-            onScanHomeDirectory: {},
             onChooseDirectory: {},
-            onRescan: {},
-            onShowSettings: {}
+            onRescan: {}
         )
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -1228,11 +2056,129 @@ struct DiskScannerTests {
         )
     }
 
+    private func previewProcessDiskRate(
+        _ pid: Int32,
+        _ name: String,
+        _ read: Double,
+        _ write: Double
+    ) -> ProcessDiskIORate {
+        let bundlePath = "/Applications/\(name).app"
+        return ProcessDiskIORate(
+            id: pid,
+            processName: name,
+            executablePath: "\(bundlePath)/Contents/MacOS/\(name)",
+            applicationKey: "app:\(bundlePath)",
+            applicationName: name,
+            applicationBundlePath: bundlePath,
+            bytesReadPerSecond: read,
+            bytesWrittenPerSecond: write
+        )
+    }
+
+    private func previewThumbnailRGBA(
+        red: UInt8,
+        green: UInt8,
+        blue: UInt8
+    ) -> Data {
+        let size = 32
+        var bytes = [UInt8](repeating: 255, count: size * size * 4)
+        for y in 0..<size {
+            for x in 0..<size {
+                let offset = (y * size + x) * 4
+                let highlight = UInt8(min((x + y) * 2, 80))
+                bytes[offset] = red &+ highlight / 4
+                bytes[offset + 1] = green &+ highlight / 5
+                bytes[offset + 2] = blue
+                bytes[offset + 3] = 255
+            }
+        }
+        return Data(bytes)
+    }
+
     private func writePNG(_ image: NSBitmapImageRep, to url: URL) throws {
         guard let data = image.representation(using: .png, properties: [:]) else {
             throw FixtureError.cannotRenderView
         }
         try data.write(to: url)
+    }
+
+    private func writeFixtureImage(
+        to url: URL,
+        width: Int,
+        height: Int,
+        style: FixtureImageStyle,
+        type: UTType,
+        quality: Double = 1
+    ) throws {
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
+            ?? CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw FixtureError.cannotWriteImage
+        }
+
+        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        switch style {
+        case .reference:
+            context.setFillColor(CGColor(red: 0.96, green: 0.97, blue: 0.99, alpha: 1))
+            context.fill(canvas)
+            context.setFillColor(CGColor(red: 0.08, green: 0.42, blue: 0.93, alpha: 1))
+            context.fill(CGRect(
+                x: Double(width) * 0.08,
+                y: Double(height) * 0.1,
+                width: Double(width) * 0.4,
+                height: Double(height) * 0.78
+            ))
+            context.setFillColor(CGColor(red: 1, green: 0.48, blue: 0.08, alpha: 1))
+            context.fillEllipse(in: CGRect(
+                x: Double(width) * 0.56,
+                y: Double(height) * 0.18,
+                width: Double(width) * 0.34,
+                height: Double(height) * 0.55
+            ))
+            context.setStrokeColor(CGColor(gray: 0.12, alpha: 1))
+            context.setLineWidth(CGFloat(width) * 0.035)
+            context.move(to: CGPoint(x: Double(width) * 0.15, y: Double(height) * 0.2))
+            context.addLine(to: CGPoint(x: Double(width) * 0.85, y: Double(height) * 0.82))
+            context.strokePath()
+        case .different:
+            context.setFillColor(CGColor(red: 0.12, green: 0.72, blue: 0.32, alpha: 1))
+            context.fill(canvas)
+            context.setFillColor(CGColor(red: 0.52, green: 0.05, blue: 0.64, alpha: 1))
+            for band in 0..<4 {
+                context.fill(CGRect(
+                    x: 0,
+                    y: Double(height) * (Double(band) * 0.24 + 0.06),
+                    width: Double(width),
+                    height: Double(height) * 0.1
+                ))
+            }
+        }
+
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(
+                url as CFURL,
+                type.identifier as CFString,
+                1,
+                nil
+              ) else {
+            throw FixtureError.cannotWriteImage
+        }
+        let options = [
+            kCGImageDestinationLossyCompressionQuality: quality
+        ] as CFDictionary
+        CGImageDestinationAddImage(destination, image, options)
+        guard CGImageDestinationFinalize(destination) else {
+            throw FixtureError.cannotWriteImage
+        }
     }
 
     private func makeFixture() throws -> URL {
@@ -1321,6 +2267,12 @@ private enum FixtureError: Error {
     case cannotChangePermissions
     case duFailed
     case cannotRenderView
+    case cannotWriteImage
+}
+
+private enum FixtureImageStyle {
+    case reference
+    case different
 }
 
 private struct FileIdentity: Hashable {

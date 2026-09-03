@@ -21,6 +21,34 @@ enum FinderBridge {
         return panel.runModal() == .OK ? panel.url : nil
     }
 
+    @MainActor
+    static func chooseLargeFileScanDirectory(startingAt url: URL?) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L10n.text("large_files.picker.title")
+        panel.prompt = L10n.text("large_files.picker.prompt")
+        panel.message = L10n.text("large_files.picker.message")
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = url
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    @MainActor
+    static func chooseSimilarImageScanDirectory(startingAt url: URL?) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L10n.text("similar_images.picker.title")
+        panel.prompt = L10n.text("similar_images.picker.prompt")
+        panel.message = L10n.text("similar_images.picker.message")
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = url
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     static func reveal(_ url: URL?) {
         guard let url else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])

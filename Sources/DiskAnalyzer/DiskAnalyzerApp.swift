@@ -29,6 +29,7 @@ struct DiskAnalyzerApp: App {
         WindowGroup(L10n.text("app.title")) {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
         .commands {

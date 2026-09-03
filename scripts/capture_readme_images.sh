@@ -23,9 +23,17 @@ cp "$CAPTURE_ROOT/en/disk-analyzer-home.png" \
     "$PROJECT_DIR/docs/images/ui/disk-analyzer-home.png"
 cp "$CAPTURE_ROOT/en/disk-analyzer-overview.png" \
     "$PROJECT_DIR/docs/images/ui/disk-analyzer-overview.png"
+cp "$CAPTURE_ROOT/en/disk-status.png" \
+    "$PROJECT_DIR/docs/images/ui/disk-status.png"
+cp "$CAPTURE_ROOT/en/swap-analysis.png" \
+    "$PROJECT_DIR/docs/images/ui/swap-analysis.png"
 cp "$CAPTURE_ROOT/zh-Hans/disk-analyzer-home.png" \
     "$PROJECT_DIR/docs/images/ui/disk-analyzer-home.zh-CN.png"
 cp "$CAPTURE_ROOT/zh-Hans/disk-analyzer-overview.png" \
     "$PROJECT_DIR/docs/images/ui/disk-analyzer-overview.zh-CN.png"
+cp "$CAPTURE_ROOT/zh-Hans/disk-status.png" \
+    "$PROJECT_DIR/docs/images/ui/disk-status.zh-CN.png"
+cp "$CAPTURE_ROOT/zh-Hans/swap-analysis.png" \
+    "$PROJECT_DIR/docs/images/ui/swap-analysis.zh-CN.png"
 
-echo "Updated bilingual README screenshots in docs/images/ui."
+echo "Updated bilingual disk status, space, and swap screenshots in docs/images/ui."

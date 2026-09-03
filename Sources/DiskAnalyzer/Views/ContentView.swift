@@ -165,14 +165,14 @@ final class ScanController: ObservableObject {
         startScan(
             from: url,
             completionNotice: completionNotice,
-            preservingExistingResult: true
+            preservingNavigation: true
         )
     }
 
     func startScan(
         from url: URL,
         completionNotice: String? = nil,
-        preservingExistingResult: Bool = false
+        preservingNavigation: Bool = false
     ) {
         guard !cleanupPhase.isActive else {
             alertMessage = L10n.text("collector.busy")
@@ -185,15 +185,17 @@ final class ScanController: ObservableObject {
         scanTask?.cancel()
         let scanID = UUID()
         let previousNavigationPaths = navigationPath.compactMap(\.path)
-        let previousFreshness = resultFreshness
         activeScanID = scanID
         isShowingHome = false
         selectedScanURL = url
-        if !preservingExistingResult {
-            navigationPath = []
-            result = nil
-            resultFreshness = .scanBacked
-            suppressedPaths.removeAll()
+        // A whole-disk result tree can occupy hundreds of megabytes. Keeping
+        // it alive while a replacement tree is built makes rescans approach
+        // twice the steady-state memory footprint on large file systems.
+        navigationPath = []
+        result = nil
+        resultFreshness = .scanBacked
+        suppressedPaths.removeAll()
+        if !preservingNavigation {
             selectedRankingNodeID = nil
         }
         dismissNotice()
@@ -224,7 +226,7 @@ final class ScanController: ObservableObject {
                 result = scanResult
                 resultFreshness = .scanBacked
                 suppressedPaths.removeAll()
-                if preservingExistingResult {
+                if preservingNavigation {
                     navigationPath = reboundNavigationPath(
                         previousPaths: previousNavigationPaths,
                         root: scanResult.root
@@ -247,29 +249,19 @@ final class ScanController: ObservableObject {
                 )
             } catch is CancellationError {
                 if activeScanID == scanID {
-                    if preservingExistingResult, let existingResult = result {
-                        resultFreshness = previousFreshness
-                        publishDoneProgress(for: existingResult)
-                    } else {
-                        progress = .idle
-                    }
+                    progress = .idle
                 }
             } catch {
                 if activeScanID == scanID {
                     alertMessage = error.localizedDescription
-                    if preservingExistingResult, let existingResult = result {
-                        resultFreshness = previousFreshness
-                        publishDoneProgress(for: existingResult)
-                    } else {
-                        progress = ScanProgress(
-                            scannedItems: 0,
-                            scannedFiles: 0,
-                            scannedDirectories: 0,
-                            allocatedBytes: 0,
-                            currentPath: url.path,
-                            phase: .failed(error.localizedDescription)
-                        )
-                    }
+                    progress = ScanProgress(
+                        scannedItems: 0,
+                        scannedFiles: 0,
+                        scannedDirectories: 0,
+                        allocatedBytes: 0,
+                        currentPath: url.path,
+                        phase: .failed(error.localizedDescription)
+                    )
                 }
             }
         }
@@ -640,6 +632,10 @@ private enum PendingScanAction {
 
 struct ContentView: View {
     @StateObject private var controller = ScanController()
+    @StateObject private var diskStatusMonitor = DiskStatusMonitor()
+    @StateObject private var swapMonitor = SwapMonitor()
+    @StateObject private var largeFileScanController = LargeFileScanController()
+    @StateObject private var similarImageScanController = SimilarImageScanController()
     @AppStorage("fullDiskAccessOnboardingCompleted")
     private var fullDiskAccessOnboardingCompleted = false
     @AppStorage("fullDiskAccessConfirmedCodeIdentity")
@@ -652,6 +648,8 @@ struct ContentView: View {
     @State private var pendingScanAction: PendingScanAction?
     @State private var fullDiskAccessProbeResult = FullDiskAccessProbe.check()
     @State private var didAttemptPermissionCheck = false
+    @State private var analysisMode: AnalysisMode?
+    @State private var selectedDiskUtilityTool: DiskUtilityTool = .largeFiles
 
     private var fullDiskAccessConfirmationStatus: FullDiskAccessConfirmationStatus {
         .evaluate(
@@ -668,43 +666,45 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScanControlView(
-                controller: controller,
-                onShowHome: controller.showHome,
-                onShowLatestResult: controller.showLatestResult,
-                onScanStartupDisk: { requestScan(.startupDisk) },
-                onScanHomeDirectory: { requestScan(.homeDirectory) },
-                onChooseDirectory: { requestScan(.chooseDirectory) },
-                onRescan: { requestScan(.rescan) },
+            AnalysisNavigationBar(
+                selection: $analysisMode,
+                isModeSwitchDisabled: (analysisMode == nil || analysisMode == .diskSpace)
+                    && (controller.isScanning || controller.cleanupPhase.isActive),
+                onShowHome: showDiskAnalysisHome,
                 onShowSettings: { isLanguageSettingsPresented = true }
             )
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.bar)
 
             Divider()
 
-            if let result = controller.result, controller.isPresentingResult {
-                ResultsView(
-                    controller: controller,
-                    result: result,
-                    onRescan: { requestScan(.rescan) }
-                )
-            } else {
-                EmptyStateView(
-                    controller: controller,
-                    fullDiskAccessConfirmationStatus: fullDiskAccessConfirmationStatus,
-                    onShowPermissionGuide: showPermissionGuide,
-                    onScanStartupDisk: { requestScan(.startupDisk) },
-                    onScanHomeDirectory: { requestScan(.homeDirectory) },
-                    onChooseDirectory: { requestScan(.chooseDirectory) }
-                )
+            Group {
+                if let analysisMode {
+                    switch analysisMode {
+                    case .diskStatus:
+                        DiskStatusView(monitor: diskStatusMonitor)
+                    case .diskSpace:
+                        diskAnalysisContent
+                    case .swapSpace:
+                        SwapAnalysisView(monitor: swapMonitor)
+                    case .tools:
+                        ToolsView(
+                            largeFileController: largeFileScanController,
+                            similarImageController: similarImageScanController,
+                            selection: $selectedDiskUtilityTool
+                        )
+                    }
+                } else {
+                    diskAnalysisContent
+                }
             }
         }
         .id(appLanguageCode)
         .environment(\.locale, appLanguage.locale)
-        .background(WindowTitleConfigurator(title: L10n.text("app.title")))
         .frame(minWidth: 1_040, minHeight: 680)
+        .onChange(of: analysisMode) { mode in
+            if mode == .diskSpace {
+                controller.showLatestResult()
+            }
+        }
         .onAppear {
             if refreshFullDiskAccessStatus().isGranted { return }
             guard fullDiskAccessConfirmationStatus != .confirmed,
@@ -749,6 +749,50 @@ struct ContentView: View {
         } message: {
             Text(controller.alertMessage ?? "")
         }
+    }
+
+    private var diskAnalysisContent: some View {
+        VStack(spacing: 0) {
+            if controller.isPresentingResult {
+                ScanControlView(
+                    controller: controller,
+                    onChooseDirectory: { requestScan(.chooseDirectory) },
+                    onRescan: { requestScan(.rescan) }
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.bar)
+
+                Divider()
+            }
+
+            if let result = controller.result, controller.isPresentingResult {
+                ResultsView(
+                    controller: controller,
+                    result: result,
+                    onRescan: { requestScan(.rescan) }
+                )
+            } else {
+                EmptyStateView(
+                    controller: controller,
+                    fullDiskAccessConfirmationStatus: fullDiskAccessConfirmationStatus,
+                    onShowPermissionGuide: showPermissionGuide,
+                    onShowLatestResult: {
+                        analysisMode = .diskSpace
+                        controller.showLatestResult()
+                    },
+                    onScanStartupDisk: { requestScan(.startupDisk) },
+                    onScanHomeDirectory: { requestScan(.homeDirectory) },
+                    onChooseDirectory: { requestScan(.chooseDirectory) },
+                    onShowSwapAnalysis: { analysisMode = .swapSpace }
+                )
+            }
+        }
+    }
+
+    private func showDiskAnalysisHome() {
+        analysisMode = nil
+        controller.showHome()
     }
 
     private func showPermissionGuide() {
@@ -815,6 +859,7 @@ struct ContentView: View {
     }
 
     private func perform(_ action: PendingScanAction) {
+        analysisMode = .diskSpace
         switch action {
         case .startupDisk:
             controller.scanStartupDisk()
@@ -1156,9 +1201,11 @@ struct EmptyStateView: View {
     @ObservedObject var controller: ScanController
     let fullDiskAccessConfirmationStatus: FullDiskAccessConfirmationStatus
     let onShowPermissionGuide: () -> Void
+    let onShowLatestResult: () -> Void
     let onScanStartupDisk: () -> Void
     let onScanHomeDirectory: () -> Void
     let onChooseDirectory: () -> Void
+    let onShowSwapAnalysis: () -> Void
     var homeDirectoryPath = FileManager.default.homeDirectoryForCurrentUser.path
 
     var body: some View {
@@ -1198,6 +1245,17 @@ struct EmptyStateView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: 620)
+            }
+
+            if !controller.isScanning, controller.result != nil {
+                Button(action: onShowLatestResult) {
+                    Label(
+                        L10n.text("toolbar.return_results"),
+                        systemImage: "chart.pie.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
 
             if !controller.isScanning {
@@ -1257,8 +1315,15 @@ struct EmptyStateView: View {
                         tint: .purple,
                         action: onChooseDirectory
                     )
+                    ScanChoiceButton(
+                        title: L10n.text("home.swap.title"),
+                        subtitle: L10n.text("home.swap.detail"),
+                        icon: "memorychip",
+                        tint: .orange,
+                        action: onShowSwapAnalysis
+                    )
                 }
-                .frame(maxWidth: 720)
+                .frame(maxWidth: 960)
             }
 
             Label(

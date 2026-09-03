@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct LanguageSettingsView: View {
@@ -56,25 +55,5 @@ struct LanguageSettingsView: View {
         }
         .padding(24)
         .frame(width: 460)
-    }
-}
-
-struct WindowTitleConfigurator: NSViewRepresentable {
-    let title: String
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        updateWindowTitle(from: view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        updateWindowTitle(from: nsView)
-    }
-
-    private func updateWindowTitle(from view: NSView) {
-        DispatchQueue.main.async {
-            view.window?.title = title
-        }
     }
 }
