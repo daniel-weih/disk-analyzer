@@ -33,9 +33,9 @@ final class FullDiskAccessDragAssistant {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.level = .floating
+        panel.level = .normal
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.collectionBehavior = [.ignoresCycle]
         panel.contentView = NSHostingView(rootView: PermissionDragStrip(onBack: { [weak self] in
             guard let self else { return }
             let callback = self.onBack
@@ -78,8 +78,12 @@ final class FullDiskAccessDragAssistant {
                 return
             }
         }
-        guard let app = NSWorkspace.shared.frontmostApplication,
-              app.bundleIdentifier == "com.apple.systempreferences" else {
+        // The drag source belongs to our app; Settings can lose focus while
+        // the user interacts with it. Track the running Settings window, not
+        // the frontmost application, so focus changes never remove the source.
+        guard let app = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.apple.systempreferences"
+        ).first(where: { !$0.isTerminated && !$0.isHidden }) else {
             panel.orderOut(nil)
             if !hasShownOverlay && Date().timeIntervalSince(startedAt) > 10 { restoreGuide() }
             return
@@ -94,18 +98,21 @@ final class FullDiskAccessDragAssistant {
             if decision == .fallback { restoreGuide() }
             return
         }
-        guard let frame = snapshot?.frame,
+        guard let snapshot,
               let screen = NSScreen.screens.max(by: {
-                  $0.frame.intersection(frame).area < $1.frame.intersection(frame).area
+                  $0.frame.intersection(snapshot.frame).area < $1.frame.intersection(snapshot.frame).area
               }) else {
             // Do not guess where the permission list is when geometry is unavailable.
             panel.orderOut(nil)
             restoreGuide()
             return
         }
-        let target = PermissionDragGeometry.overlayFrame(settings: frame, visible: screen.visibleFrame)
+        let target = PermissionDragGeometry.overlayFrame(settings: snapshot.frame, visible: screen.visibleFrame)
         if panel.frame != target { panel.setFrame(target, display: true) }
-        if !panel.isVisible { panel.orderFrontRegardless() }
+        // Keep the assistant immediately above Settings in the normal window
+        // stack, not above whichever application the user is currently using.
+        // Reapply when Settings or our app is reordered by activation.
+        panel.order(.above, relativeTo: snapshot.number)
         hasShownOverlay = true
     }
 
@@ -116,7 +123,7 @@ final class FullDiskAccessDragAssistant {
         callback?()
     }
 
-    private func settingsWindow(pid: pid_t) -> (frame: CGRect, title: String?)? {
+    private func settingsWindow(pid: pid_t) -> (frame: CGRect, title: String?, number: Int)? {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
         ) as? [[String: Any]], let desktop = NSScreen.screens.first else { return nil }
@@ -125,12 +132,14 @@ final class FullDiskAccessDragAssistant {
         for window in windows {
             guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
                   (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  let number = (window[kCGWindowNumber as String] as? NSNumber)?.intValue,
+                  number > 0,
                   let bounds = window[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds),
                   rect.width >= 450, rect.height >= 350 else { continue }
             return (CGRect(x: rect.minX, y: desktop.frame.maxY - rect.maxY,
                            width: rect.width, height: rect.height),
-                    window[kCGWindowName as String] as? String)
+                    window[kCGWindowName as String] as? String, number)
         }
         return nil
     }
@@ -142,14 +151,17 @@ enum PermissionDragPagePolicy {
     static func decision(title: String?, hasGeometry: Bool, elapsed: TimeInterval,
                          hasShownOverlay: Bool) -> Decision {
         // Window titles may be redacted without Screen Recording permission.
-        // Never request that permission merely to show an onboarding overlay.
+        // Missing metadata is not evidence that the user left the page opened
+        // by our deep link. Keep the drag affordance available in that case.
         let title = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let knownTitles = ["Full Disk Access", "完全磁盘访问权限", "完全磁盘访问", "完整磁碟存取權", "完整磁碟存取"]
         if hasGeometry && knownTitles.contains(where: { $0.caseInsensitiveCompare(title) == .orderedSame }) {
             return .show
         }
-        // Allow the deep link to load initially; after display, fail closed as
-        // soon as the user changes pages or Settings stops exposing its title.
+        if hasGeometry && title.isEmpty {
+            return hasShownOverlay || elapsed >= 1 ? .show : .wait
+        }
+        // A readable different title or unavailable geometry still falls back.
         return hasShownOverlay || elapsed >= 3 ? .fallback : .wait
     }
 }

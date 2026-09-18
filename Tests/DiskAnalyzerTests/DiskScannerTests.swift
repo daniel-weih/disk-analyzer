@@ -11,15 +11,18 @@ import UniformTypeIdentifiers
 
 @Suite("Disk scanner accuracy")
 struct DiskScannerTests {
-    @Test("Permission overlay only follows a confirmed permission page and otherwise falls back")
+    @Test("Permission overlay tolerates redacted titles but rejects known other pages")
     func permissionOverlayPageGuard() {
         #expect(PermissionDragPagePolicy.decision(title: "Full Disk Access", hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .show)
         #expect(PermissionDragPagePolicy.decision(title: "完全磁盘访问权限", hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .show)
         #expect(PermissionDragPagePolicy.decision(title: "Network", hasGeometry: true, elapsed: 1, hasShownOverlay: true) == .fallback)
-        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .wait)
-        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 3, hasShownOverlay: false) == .fallback)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 0.2, hasShownOverlay: false) == .wait)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .show)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 3, hasShownOverlay: false) == .show)
         #expect(PermissionDragPagePolicy.decision(title: "Full Disk Access", hasGeometry: false, elapsed: 3, hasShownOverlay: false) == .fallback)
-        #expect(PermissionDragPagePolicy.decision(title: "", hasGeometry: true, elapsed: 1, hasShownOverlay: true) == .fallback)
+        #expect(PermissionDragPagePolicy.decision(title: "", hasGeometry: true, elapsed: 1, hasShownOverlay: true) == .show)
+        #expect(PermissionDragPagePolicy.decision(title: "  ", hasGeometry: true, elapsed: 4, hasShownOverlay: false) == .show)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: false, elapsed: 3, hasShownOverlay: false) == .fallback)
     }
 
     @Test("Permission drag strip stays inside either display")
