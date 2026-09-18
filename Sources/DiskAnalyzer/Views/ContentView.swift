@@ -643,6 +643,7 @@ struct ContentView: View {
     @AppStorage(AppLanguage.storageKey)
     private var appLanguageCode = AppLanguage.simplifiedChinese.rawValue
     @State private var isPermissionGuidePresented = false
+    @State private var permissionOverlayUnavailable = false
     @State private var isLanguageSettingsPresented = false
     @State private var hasPresentedInitialPermissionGuide = false
     @State private var pendingScanAction: PendingScanAction?
@@ -717,11 +718,12 @@ struct ContentView: View {
         )) { _ in
             finishPermissionSetupIfGranted()
         }
-        .sheet(
-            isPresented: $isPermissionGuidePresented,
-            onDismiss: { pendingScanAction = nil }
-        ) {
+        .onDisappear { FullDiskAccessDragAssistant.shared.dismiss() }
+        .sheet(isPresented: $isPermissionGuidePresented, onDismiss: {
+            if !FullDiskAccessDragAssistant.shared.isActive { pendingScanAction = nil }
+        }) {
             FullDiskAccessGuideView(
+                overlayUnavailable: permissionOverlayUnavailable,
                 hasPendingScan: pendingScanAction != nil,
                 confirmationStatus: fullDiskAccessConfirmationStatus,
                 probeResult: fullDiskAccessProbeResult,
@@ -815,7 +817,19 @@ struct ContentView: View {
 
     private func beginFullDiskAccessSetup() {
         didAttemptPermissionCheck = true
-        FinderBridge.openFullDiskAccessSettings()
+        permissionOverlayUnavailable = false
+        isPermissionGuidePresented = false
+        FullDiskAccessDragAssistant.shared.present(
+            onGranted: finishPermissionSetupIfGranted,
+            onBack: {
+                refreshFullDiskAccessStatus()
+                isPermissionGuidePresented = true
+            },
+            onFallback: {
+                permissionOverlayUnavailable = true
+                isPermissionGuidePresented = true
+            }
+        )
     }
 
     @discardableResult
@@ -836,6 +850,7 @@ struct ContentView: View {
 
     private func finishPermissionSetupIfGranted() {
         guard refreshFullDiskAccessStatus().isGranted else { return }
+        FullDiskAccessDragAssistant.shared.dismiss()
         let action = pendingScanAction
         pendingScanAction = nil
         isPermissionGuidePresented = false

@@ -79,6 +79,7 @@ struct FullDiskAccessSetupCard: View {
 }
 
 struct FullDiskAccessGuideView: View {
+    var overlayUnavailable = false
     let hasPendingScan: Bool
     let confirmationStatus: FullDiskAccessConfirmationStatus
     let probeResult: FullDiskAccessProbeResult
@@ -115,8 +116,7 @@ struct FullDiskAccessGuideView: View {
             }
         }
         .padding(26)
-        .frame(width: 650)
-        .background(FloatingPermissionWindowConfigurator())
+        .frame(width: 480)
     }
 
     private var permissionView: some View {
@@ -139,14 +139,17 @@ struct FullDiskAccessGuideView: View {
                     .background(Color.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
                 }
 
-                permissionSteps
-
                 Button(action: onOpenSettings) {
                     Label(L10n.text("fda.open_settings"), systemImage: "gearshape.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+
+                Label(L10n.text(overlayUnavailable ? "fda.overlay.fallback" : "fda.overlay.intro"), systemImage: "hand.draw")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 10) {
                     Button(action: onRevealApplication) {
@@ -215,69 +218,6 @@ struct FullDiskAccessGuideView: View {
         }
     }
 
-    private var permissionSteps: some View {
-        VStack(spacing: 12) {
-            Text(L10n.text("fda.steps.title"))
-                .font(.system(size: 13, weight: .semibold))
-
-            HStack(spacing: 10) {
-                PermissionStepView(
-                    number: 1,
-                    iconName: "gearshape.fill",
-                    title: L10n.text("fda.step.open.title"),
-                    detail: L10n.text("fda.step.open.detail")
-                )
-
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
-
-                VStack(spacing: 5) {
-                    Text("2")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.blue)
-                        .frame(width: 20, height: 20)
-                        .background(Color.blue.opacity(0.12), in: Circle())
-
-                    DraggableApplicationIconView(applicationURL: applicationURL)
-                        .frame(width: 62, height: 62)
-                        .padding(5)
-                        .background(.background, in: RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .black.opacity(0.14), radius: 6, y: 3)
-
-                    Text(L10n.text("fda.step.drag.title", appDisplayName))
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                    Label(L10n.text("fda.step.drag.detail"), systemImage: "hand.draw.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.blue)
-                }
-                .frame(maxWidth: .infinity, minHeight: 132)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.blue.opacity(0.06))
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            Color.blue.opacity(0.55),
-                            style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                        )
-                }
-
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(.tertiary)
-
-                PermissionStepView(
-                    number: 3,
-                    iconName: "switch.2",
-                    title: L10n.text("fda.step.switch.title"),
-                    detail: L10n.text("fda.step.switch.detail")
-                )
-            }
-        }
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
-    }
 
     @ViewBuilder
     private var permissionStatusView: some View {
@@ -339,33 +279,6 @@ struct FullDiskAccessGuideView: View {
     }
 }
 
-private struct PermissionStepView: View {
-    let number: Int
-    let iconName: String
-    let title: String
-    let detail: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(number.formatted())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .background(Color.secondary.opacity(0.1), in: Circle())
-            Image(systemName: iconName)
-                .font(.system(size: 26, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(height: 38)
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-            Text(detail)
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, minHeight: 132)
-    }
-}
 
 private extension View {
     func permissionStatusStyle() -> some View {
@@ -374,59 +287,5 @@ private extension View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
-    }
-}
-
-private struct FloatingPermissionWindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> PermissionWindowLevelView {
-        PermissionWindowLevelView()
-    }
-
-    func updateNSView(_ nsView: PermissionWindowLevelView, context: Context) {}
-
-    static func dismantleNSView(
-        _ nsView: PermissionWindowLevelView,
-        coordinator: Void
-    ) {
-        nsView.restoreWindowConfiguration()
-    }
-}
-
-@MainActor
-private final class PermissionWindowLevelView: NSView {
-    private weak var configuredWindow: NSWindow?
-    private var originalLevel: NSWindow.Level?
-    private var originalHidesOnDeactivate: Bool?
-    private var originalCollectionBehavior: NSWindow.CollectionBehavior?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard let window, window !== configuredWindow else { return }
-        restoreWindowConfiguration()
-
-        configuredWindow = window
-        originalLevel = window.level
-        originalHidesOnDeactivate = window.hidesOnDeactivate
-        originalCollectionBehavior = window.collectionBehavior
-
-        window.level = .floating
-        window.hidesOnDeactivate = false
-        window.collectionBehavior.insert(.canJoinAllSpaces)
-    }
-
-    func restoreWindowConfiguration() {
-        guard let configuredWindow else { return }
-        if let originalLevel { configuredWindow.level = originalLevel }
-        if let originalHidesOnDeactivate {
-            configuredWindow.hidesOnDeactivate = originalHidesOnDeactivate
-        }
-        if let originalCollectionBehavior {
-            configuredWindow.collectionBehavior = originalCollectionBehavior
-        }
-
-        self.configuredWindow = nil
-        originalLevel = nil
-        originalHidesOnDeactivate = nil
-        originalCollectionBehavior = nil
     }
 }

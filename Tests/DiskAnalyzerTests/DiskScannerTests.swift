@@ -11,6 +11,39 @@ import UniformTypeIdentifiers
 
 @Suite("Disk scanner accuracy")
 struct DiskScannerTests {
+    @Test("Permission overlay only follows a confirmed permission page and otherwise falls back")
+    func permissionOverlayPageGuard() {
+        #expect(PermissionDragPagePolicy.decision(title: "Full Disk Access", hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .show)
+        #expect(PermissionDragPagePolicy.decision(title: "完全磁盘访问权限", hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .show)
+        #expect(PermissionDragPagePolicy.decision(title: "Network", hasGeometry: true, elapsed: 1, hasShownOverlay: true) == .fallback)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 1, hasShownOverlay: false) == .wait)
+        #expect(PermissionDragPagePolicy.decision(title: nil, hasGeometry: true, elapsed: 3, hasShownOverlay: false) == .fallback)
+        #expect(PermissionDragPagePolicy.decision(title: "Full Disk Access", hasGeometry: false, elapsed: 3, hasShownOverlay: false) == .fallback)
+        #expect(PermissionDragPagePolicy.decision(title: "", hasGeometry: true, elapsed: 1, hasShownOverlay: true) == .fallback)
+    }
+
+    @Test("Permission drag strip stays inside either display")
+    func permissionOverlayGeometry() {
+        for visible in [CGRect(x: 0, y: 24, width: 1440, height: 876),
+                        CGRect(x: -1280, y: -200, width: 1280, height: 800)] {
+            let settings = CGRect(x: visible.maxX - 600, y: visible.minY + 30, width: 590, height: 680)
+            let strip = PermissionDragGeometry.overlayFrame(settings: settings, visible: visible)
+            #expect(visible.contains(strip))
+            #expect(strip.maxX < settings.maxX)
+            #expect(strip.height == 116)
+        }
+    }
+
+    @MainActor
+    @Test("Permission drag strip renders at its actual compact size")
+    func permissionOverlayRendering() throws {
+        let image = try render(view: PermissionDragStrip(onBack: {}), size: CGSize(width: 420, height: 116))
+        #expect(image.pixelsWide >= 420)
+        if let directory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
+            try writePNG(image, to: URL(fileURLWithPath: directory).appendingPathComponent("permission-strip.png"))
+        }
+    }
+
     @MainActor
     @Test("Tool scanners default to the startup disk root")
     func toolScannersDefaultToStartupDiskRoot() {
@@ -521,6 +554,21 @@ struct DiskScannerTests {
         #expect(FullDiskAccessProbe.classify(fileDescriptor: -1, errorCode: EPERM) == .denied)
         #expect(FullDiskAccessProbe.classify(fileDescriptor: -1, errorCode: EACCES) == .denied)
         #expect(FullDiskAccessProbe.classify(fileDescriptor: -1, errorCode: ENOENT) == .unavailable)
+    }
+
+    @Test("Missing user permission database falls back to another protected database")
+    func permissionProbeFallback() {
+        let user = URL(fileURLWithPath: "/fixture/user")
+        let system = URL(fileURLWithPath: "/fixture/system")
+        #expect(FullDiskAccessProbe.checkCandidates([user, system]) {
+            $0 == user ? .unavailable : .granted
+        } == .granted)
+        #expect(FullDiskAccessProbe.checkCandidates([user, system]) {
+            $0 == user ? .unavailable : .denied
+        } == .denied)
+        #expect(FullDiskAccessProbe.checkCandidates([user, system]) { _ in
+            .unavailable
+        } == .unavailable)
     }
 
     @Test("English and Simplified Chinese localization tables are available")

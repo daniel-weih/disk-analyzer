@@ -374,6 +374,11 @@
 "fda.install.title" = "Install %@ First";
 "fda.install.detail" = "Drag %@ to Applications, then open the copy in Applications.";
 "fda.got_it" = "Got It";
+"fda.overlay.title" = "Drag the app into the Full Disk Access list above";
+"fda.overlay.detail" = "Then turn on its switch. Access is checked automatically.";
+"fda.overlay.back" = "Back to Disk Analyzer";
+"fda.overlay.fallback" = "The drag helper stopped because the permission page could not be confirmed or located. In Full Disk Access settings, click +, select DiskAnalyzer from Applications, and turn on its switch. You can also reveal the app in Finder below.";
+"fda.overlay.intro" = "A small drag helper will appear at the bottom of System Settings. Drag the app from there into the permission list, then turn on its switch.";
 
 "trash.protected" = "This location is protected and cannot be moved to Trash from the app.";
 "trash.moved" = "“%@” was moved to Trash and removed from its original location in this view. Empty Trash to actually free disk space.";

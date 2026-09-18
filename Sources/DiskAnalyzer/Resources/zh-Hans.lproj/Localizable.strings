@@ -374,6 +374,11 @@
 "fda.install.title" = "先安装 %@";
 "fda.install.detail" = "把 %@ 拖到“应用程序”，再从“应用程序”中打开。";
 "fda.got_it" = "知道了";
+"fda.overlay.title" = "将应用拖入上方的「完全磁盘访问权限」列表";
+"fda.overlay.detail" = "添加后打开开关，授权状态会自动检测。";
+"fda.overlay.back" = "返回磁盘分析";
+"fda.overlay.fallback" = "无法确认或定位权限页面，拖拽提示已停止。请在「完全磁盘访问权限」中点击 +，从「应用程序」选择 DiskAnalyzer 并打开开关；也可通过下方按钮在访达中显示应用。";
+"fda.overlay.intro" = "系统设置底部会出现拖拽提示条，将其中的应用拖入权限列表，再打开开关。";
 
 "trash.protected" = "这个位置受到保护，不能从应用中移到废纸篓。";
 "trash.moved" = "“%@”已移到废纸篓，并已从当前视图的原位置移除。清空废纸篓后才会真正释放磁盘空间。";

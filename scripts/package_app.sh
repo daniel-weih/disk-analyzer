@@ -21,11 +21,21 @@ cp "$PROJECT_DIR/Resources/Info.plist" "$APP_CONTENTS/Info.plist"
 cp "$PROJECT_DIR/Resources/AppIcon.icns" "$APP_CONTENTS/Resources/AppIcon.icns"
 
 RESOURCE_BUNDLE="$BIN_DIR/DiskAnalyzer_DiskAnalyzer.bundle"
+RESOURCE_ROOT="$RESOURCE_BUNDLE"
+if [[ -d "$RESOURCE_BUNDLE/Contents/Resources" ]]; then
+  RESOURCE_ROOT="$RESOURCE_BUNDLE/Contents/Resources"
+fi
 for LANGUAGE in en zh-hans; do
-  LOCALIZATION_DIR="$RESOURCE_BUNDLE/$LANGUAGE.lproj"
-  if [[ -d "$LOCALIZATION_DIR" ]]; then
-    cp -R "$LOCALIZATION_DIR" "$APP_CONTENTS/Resources/"
+  LOCALIZATION_DIR="$RESOURCE_ROOT/$LANGUAGE.lproj"
+  if [[ "$LANGUAGE" == "zh-hans" && -d "$RESOURCE_ROOT/zh-Hans.lproj" ]]; then
+    LOCALIZATION_DIR="$RESOURCE_ROOT/zh-Hans.lproj"
   fi
+  if [[ ! -f "$LOCALIZATION_DIR/Localizable.strings" ]]; then
+    print -u2 "error: missing localization: $LOCALIZATION_DIR/Localizable.strings"
+    exit 1
+  fi
+  cp -R "$LOCALIZATION_DIR" "$APP_CONTENTS/Resources/$LANGUAGE.lproj"
+  plutil -lint "$APP_CONTENTS/Resources/$LANGUAGE.lproj/Localizable.strings"
 done
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then

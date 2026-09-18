@@ -50,25 +50,12 @@ final class DraggableApplicationImageView: NSImageView, NSDraggingSource {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func mouseDown(with event: NSEvent) {
-        guard let window else { return }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        while let nextEvent = window.nextEvent(
-            matching: [.leftMouseDragged, .leftMouseUp],
-            until: .distantFuture,
-            inMode: .eventTracking,
-            dequeue: true
-        ) {
-            switch nextEvent.type {
-            case .leftMouseDragged:
-                beginApplicationDrag(with: nextEvent)
-                return
-            case .leftMouseUp:
-                return
-            default:
-                continue
-            }
-        }
+    override func mouseDown(with event: NSEvent) {}
+
+    override func mouseDragged(with event: NSEvent) {
+        beginApplicationDrag(with: event)
     }
 
     override func resetCursorRects() {
