@@ -362,7 +362,8 @@ actor DiskScanner {
                     logicalBytes: logical,
                     allocatedBytes: childAllocated,
                     fileCount: 1,
-                    isSharedReference: !firstReference || hasMultipleLinks
+                    isSharedReference: !firstReference || hasMultipleLinks,
+                    fileSnapshot: FileSnapshot(info)
                 )
                 parent.addFile(node)
                 context.fileCount += 1
@@ -422,7 +423,8 @@ actor DiskScanner {
             children: children,
             fileCount: accumulator.fileCount,
             directoryCount: accumulator.directoryCount,
-            isUnreadable: accumulator.isUnreadable
+            isUnreadable: accumulator.isUnreadable,
+            fileSnapshot: accumulator.fileSnapshot
         )
     }
 
@@ -534,6 +536,7 @@ private func stableDeviceID(_ info: stat) -> UInt64 {
 }
 
 private final class DirectoryAccumulator {
+    let fileSnapshot: FileSnapshot
     let path: String
     let ownLogicalBytes: Int64
     let ownAllocatedBytes: Int64
@@ -549,6 +552,7 @@ private final class DirectoryAccumulator {
 
     init(path: String, info: stat, retainedFileLimit: Int) {
         self.path = path
+        self.fileSnapshot = FileSnapshot(info)
         self.ownLogicalBytes = max(Int64(info.st_size), 0)
         self.ownAllocatedBytes = max(Int64(info.st_blocks) * 512, 0)
         self.logicalBytes = ownLogicalBytes

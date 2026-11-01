@@ -27,7 +27,8 @@ let package = Package(
             path: "Sources/DiskAnalyzer",
             resources: [.process("Resources")],
             linkerSettings: [
-                .linkedFramework("Vision")
+                .linkedFramework("Vision"),
+                .linkedFramework("AVFoundation")
             ]
         ),
         .testTarget(

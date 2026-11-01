@@ -54,6 +54,20 @@ enum FinderBridge {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    @MainActor
+    static func chooseVideoScanDirectory(startingAt url: URL?) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = L10n.text("videos.picker.title")
+        panel.prompt = L10n.text("similar_images.picker.prompt")
+        panel.message = L10n.text("videos.picker.message")
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.directoryURL = url
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     static func open(_ url: URL?) {
         guard let url else { return }
         NSWorkspace.shared.open(url)

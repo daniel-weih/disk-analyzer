@@ -1,4 +1,4 @@
-"app.title" = "磁盘分析";
+"app.title" = "DiskAnalyzer";
 
 "analysis.mode.picker" = "分析类型";
 "analysis.mode.status" = "磁盘状态";
@@ -11,6 +11,45 @@
 "tools.detail" = "磁盘相关实用工具将在这里集中展示。";
 
 "large_files.title" = "大文件扫描";
+"videos.title" = "重复视频扫描";
+"videos.selector.detail" = "完整文件与多帧画面匹配";
+"videos.method" = "匹配方式";
+"videos.method.exact" = "完全重复";
+"videos.method.similar" = "内容相似";
+"videos.threshold" = "相似度 ≥ %@%%";
+"videos.exact.note" = "匹配结果的整个文件内容一致，包括音频和元数据；会完整校验文件，文件名可以不同。";
+"videos.similar.note" = "抽样比较整段视频的画面与时长，音轨未比较；不用于识别剪辑、变速或部分片段。请核对结果后再处理文件。";
+"videos.score.help" = "取 8 对对应画面中最低的相似度，由 Vision 特征距离换算；不是置信度，也不表示整段视频或音频完全相同。";
+"videos.empty.title" = "查找重复视频";
+"videos.empty.detail" = "选择文件夹，查找完全相同的文件或画面相近的版本。结果按组展示视频信息和三个时间点的预览，全部在本机处理，不修改文件。";
+"videos.phase.discovering" = "正在查找视频文件";
+"videos.phase.hashing" = "正在校验整个文件内容";
+"videos.phase.analyzing" = "正在读取视频画面";
+"videos.phase.comparing" = "正在比较视频画面序列";
+"videos.phase.previews" = "正在生成视频预览";
+"videos.phase.done" = "扫描完成";
+"videos.progress" = "已扫描 %@ 个文件 · 找到 %@ 个候选视频";
+"videos.summary" = "%@ 组结果，共 %@ 个视频";
+"videos.stats" = "%@ 个候选视频 · 已分析 %@ 个 · 耗时 %@ 秒";
+"videos.search" = "搜索视频名称或路径";
+"videos.search.empty" = "没有符合搜索条件的结果组";
+"videos.no_matches" = "未找到匹配的视频";
+"videos.no_matches.exact" = "已检查的文件中未发现内容完全一致的视频。大小唯一的文件无需读取内容进行比较。";
+"videos.no_matches.similar" = "可分析的视频中，没有同时满足当前画面相似度与时长条件的结果。";
+"videos.incomplete.title" = "已检查的文件中未找到匹配";
+"videos.coverage" = "结果可能不完整：%@ 个目录无法读取，%@ 项元数据错误，%@ 个视频无法读取或解码，%@ 个文件在扫描中发生变化。";
+"videos.links" = "已跳过 %@ 个指向同一文件数据的额外硬链接路径。";
+"videos.preview.errors" = "%@ 个视频无法生成预览，已有匹配仍保留；完全重复检测不依赖视频能否播放。";
+"videos.group" = "第 %@ 组 · %@ 个视频";
+"videos.audio_tracks" = "%@ 条音轨";
+"videos.identical" = "完全一致";
+"videos.preview.unavailable" = "预览不可用";
+"videos.metadata.unavailable" = "视频信息不可用";
+"videos.picker.title" = "选择视频扫描位置";
+"videos.picker.message" = "在本机读取视频以完成查重与预览，不上传或修改文件。";
+"videos.error.changed" = "视频在扫描期间发生变化，请重新扫描核验。";
+"videos.error.undecodable" = "无法读取或解码视频。";
+"videos.error.feature" = "视频特征比较失败，扫描已停止，以免遗漏匹配结果。";
 "large_files.selector.detail" = "按大小筛选普通文件";
 "large_files.subtitle" = "按文件逻辑大小查找普通文件，结果从大到小排列。";
 "large_files.scope" = "扫描范围";
@@ -79,7 +118,7 @@
 "similar_images.result.empty.title" = "没有找到符合条件的相似图片";
 "similar_images.result.empty.detail" = "此目录中没有相似度达到 %@%% 的近似副本。";
 "similar_images.result.empty.vision.detail" = "此目录中没有 Vision 换算相似度达到 %@%% 的图片组合。";
-"similar_images.coverage.warning" = "结果可能不完整：%@ 个目录无法读取，%@ 个项目无法读取元数据，%@ 张候选图片无法解码。";
+"similar_images.coverage.warning" = "结果可能不完整：%@ 个目录无法读取，%@ 个项目无法读取元数据，%@ 张候选图片无法解码，%@ 张图片在扫描期间发生变化，已排除。";
 "similar_images.volumes.skipped" = "已按文件系统边界跳过 %@ 个独立挂载卷；需要时请单独选择该卷扫描。";
 "similar_images.group.title" = "相似组 %@";
 "similar_images.group.count" = "%@ 张";
@@ -264,7 +303,7 @@
 "common.rescan" = "重新扫描";
 
 "settings.title" = "设置";
-"settings.subtitle" = "选择 Disk Analyzer 的显示方式。";
+"settings.subtitle" = "选择 DiskAnalyzer 的显示方式。";
 "settings.language.title" = "界面语言";
 "settings.language.detail" = "界面会立即切换，并记住这项选择。";
 
@@ -376,7 +415,7 @@
 "fda.got_it" = "知道了";
 "fda.overlay.title" = "将应用拖入上方的「完全磁盘访问权限」列表";
 "fda.overlay.detail" = "添加后打开开关，授权状态会自动检测。";
-"fda.overlay.back" = "返回磁盘分析";
+"fda.overlay.back" = "返回 DiskAnalyzer";
 "fda.overlay.fallback" = "无法确认或定位权限页面，拖拽提示已停止。请在「完全磁盘访问权限」中点击 +，从「应用程序」选择 DiskAnalyzer 并打开开关；也可通过下方按钮在访达中显示应用。";
 "fda.overlay.intro" = "系统设置底部会出现拖拽提示条，将其中的应用拖入权限列表，再打开开关。";
 
@@ -406,7 +445,7 @@
 "collector.success.single" = "已移到废纸篓：“%@”";
 "collector.success.multiple" = "已将 %@ 项移到废纸篓";
 "collector.success.missing" = "“%@”已不在原位置，已从结果中隐藏";
-"alert.title" = "磁盘分析";
+"alert.title" = "DiskAnalyzer";
 "navigation.up.help" = "返回上一级";
 
 "summary.current_metric" = "当前显示口径";
@@ -457,3 +496,5 @@
 "sunburst.enter" = "进入此目录";
 "sunburst.none" = "（无选中项）";
 "sunburst.hint" = "双击色块进入目录";
+
+"trash.item_changed" = "“%@”已在扫描后被替换，请重新扫描后再清理。";

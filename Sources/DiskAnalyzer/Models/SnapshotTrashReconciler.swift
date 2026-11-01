@@ -254,7 +254,8 @@ enum SnapshotTrashReconciler {
             directoryCount: node.directoryCount,
             omittedItemCount: node.omittedItemCount,
             isUnreadable: node.isUnreadable,
-            isSharedReference: node.isSharedReference
+            isSharedReference: node.isSharedReference,
+            fileSnapshot: node.fileSnapshot
         )
     }
 
@@ -292,7 +293,8 @@ enum SnapshotTrashReconciler {
             directoryCount: directoryCount,
             omittedItemCount: original.omittedItemCount,
             isUnreadable: original.isUnreadable,
-            isSharedReference: original.isSharedReference
+            isSharedReference: original.isSharedReference,
+            fileSnapshot: original.fileSnapshot
         )
     }
 

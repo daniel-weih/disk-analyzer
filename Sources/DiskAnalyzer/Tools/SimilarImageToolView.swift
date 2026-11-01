@@ -650,7 +650,8 @@ struct SimilarImageToolView: View {
                 "similar_images.coverage.warning",
                 diagnostics.unreadableDirectoryCount.formatted(),
                 diagnostics.metadataErrorCount.formatted(),
-                diagnostics.imageDecodeErrorCount.formatted()
+                diagnostics.imageDecodeErrorCount.formatted(),
+                diagnostics.changedImageCount.formatted()
             ))
             Spacer()
         }

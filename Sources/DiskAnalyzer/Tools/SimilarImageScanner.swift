@@ -154,11 +154,13 @@ struct SimilarImageScanDiagnostics: Equatable, Sendable {
     var skippedVolumeCount = 0
     var duplicateDirectoryCount = 0
     var imageDecodeErrorCount = 0
+    var changedImageCount = 0
 
     var hasCoverageWarning: Bool {
         unreadableDirectoryCount > 0
             || metadataErrorCount > 0
             || imageDecodeErrorCount > 0
+            || changedImageCount > 0
     }
 }
 
@@ -326,10 +328,28 @@ actor SimilarImageScanner {
             )
         }
 
+        // Validate after grouping too: comparison can take long enough for files
+        // decoded earlier to be replaced. Scores depend on the reference image.
+        var validPaths = Set<String>()
+        for (path, snapshot) in context.snapshots {
+            try Task.checkCancellation()
+            if snapshot.matchesContents(at: URL(fileURLWithPath: path)) {
+                validPaths.insert(path)
+            } else {
+                context.changedPaths.insert(path)
+            }
+        }
+        let validatedGroups = groups.compactMap { group -> SimilarImageGroup? in
+            guard let reference = group.members.first(where: \.isReference),
+                  validPaths.contains(reference.item.url.path) else { return nil }
+            let members = group.members.filter { validPaths.contains($0.item.url.path) }
+            return members.count >= 2 ? SimilarImageGroup(members: members) : nil
+        }
+
         return SimilarImageScanResult(
             rootURL: rootURL,
             configuration: configuration,
-            groups: groups,
+            groups: validatedGroups,
             scannedFileCount: context.scannedFileCount,
             candidateImageCount: context.candidateImageCount,
             analyzedImageCount: context.features.count,
@@ -339,7 +359,8 @@ actor SimilarImageScanner {
                 metadataErrorCount: context.metadataErrorCount,
                 skippedVolumeCount: context.skippedVolumeCount,
                 duplicateDirectoryCount: context.duplicateDirectoryCount,
-                imageDecodeErrorCount: context.imageDecodeErrorCount
+                imageDecodeErrorCount: context.imageDecodeErrorCount,
+                changedImageCount: context.changedPaths.count
             )
         )
     }
@@ -437,6 +458,12 @@ actor SimilarImageScanner {
                 }
 
                 context.candidateImageCount += 1
+                let snapshot = FileSnapshot(statPointer.pointee)
+                guard snapshot.matchesContents(at: url) else {
+                    context.changedPaths.insert(path)
+                    context.report(path: path)
+                    continue
+                }
                 let logicalBytes = max(Int64(statPointer.pointee.st_size), 0)
                 let feature = autoreleasepool {
                     makeComparisonFeature(
@@ -445,7 +472,13 @@ actor SimilarImageScanner {
                         method: context.comparisonMethod
                     )
                 }
+                guard snapshot.matchesContents(at: url) else {
+                    context.changedPaths.insert(path)
+                    context.report(path: path)
+                    continue
+                }
                 if let feature {
+                    context.snapshots[path] = snapshot
                     context.features.append(feature)
                 } else {
                     context.imageDecodeErrorCount += 1
@@ -1045,6 +1078,8 @@ private final class SimilarImageScanContext {
     let continuation: AsyncStream<SimilarImageScanProgress>.Continuation
 
     var features: [ImageComparisonFeature] = []
+    var snapshots: [String: FileSnapshot] = [:]
+    var changedPaths: Set<String> = []
     var seenDirectories: Set<SimilarImageIdentity> = []
     var scannedFileCount = 0
     var candidateImageCount = 0

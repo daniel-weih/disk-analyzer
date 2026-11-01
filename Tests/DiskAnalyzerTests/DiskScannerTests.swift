@@ -7,6 +7,7 @@ import SwapAnalysisCore
 import SwiftUI
 import Testing
 import UniformTypeIdentifiers
+import Vision
 @testable import DiskAnalyzer
 
 @Suite("Disk scanner accuracy")
@@ -576,8 +577,8 @@ struct DiskScannerTests {
 
     @Test("English and Simplified Chinese localization tables are available")
     func localizationTablesAreAvailable() {
-        #expect(L10n.text("app.title", language: .english) == "Disk Analyzer")
-        #expect(L10n.text("app.title", language: .simplifiedChinese) == "磁盘分析")
+        #expect(L10n.text("app.title", language: .english) == "DiskAnalyzer")
+        #expect(L10n.text("app.title", language: .simplifiedChinese) == "DiskAnalyzer")
         #expect(L10n.text("analysis.mode.status", language: .english) == "Disk Status")
         #expect(L10n.text("analysis.mode.status", language: .simplifiedChinese) == "磁盘状态")
         #expect(L10n.text("analysis.mode.tools", language: .english) == "Tools")
@@ -822,7 +823,7 @@ struct DiskScannerTests {
     }
 
     @MainActor
-    @Test("Ranking sort menu keeps a readable width in the narrow pane")
+    @Test("Ranking sort menu shows its complete label in the narrow pane")
     func rankingSortMenuKeepsReadableWidth() throws {
         let root = FileNode(
             path: "/Users/demo",
@@ -848,35 +849,19 @@ struct DiskScannerTests {
         )
         .frame(width: 360, height: 240)
 
-        let hostingView = NSHostingView(rootView: view)
-        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 240)
-        let window = NSWindow(
-            contentRect: hostingView.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = hostingView
-        hostingView.layoutSubtreeIfNeeded()
-        hostingView.displayIfNeeded()
-
-        let popUpButtons = descendants(of: hostingView).compactMap { $0 as? NSPopUpButton }
-        #expect(popUpButtons.count == 1)
-        let sortButton = try #require(popUpButtons.first)
-        #expect(sortButton.frame.width >= 96)
-
-        var ancestor = sortButton.superview
-        var ancestorWidths: [CGFloat] = []
-        while let current = ancestor, current !== hostingView {
-            if current.bounds.width > 0 {
-                ancestorWidths.append(current.bounds.width)
-            }
-            ancestor = current.superview
-        }
-        #expect(ancestorWidths.min() ?? 0 >= sortButton.frame.width - 1)
+        // Check the visible label rather than SwiftUI's backing NSView class,
+        // which changes between macOS releases.
+        let image = try render(view: view, size: CGSize(width: 360, height: 240))
+        let cgImage = try #require(image.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = [AppLanguage.current.rawValue]
+        try VNImageRequestHandler(cgImage: cgImage).perform([request])
+        let expected = SortOption.sizeDescending.title.replacingOccurrences(of: " ", with: "")
+        let labels = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        #expect(labels.contains { $0.replacingOccurrences(of: " ", with: "").contains(expected) })
 
         if let captureDirectory = ProcessInfo.processInfo.environment["DISK_ANALYZER_CAPTURE_UI"] {
-            let image = try render(view: view, size: CGSize(width: 360, height: 240))
             try writePNG(
                 image,
                 to: URL(fileURLWithPath: captureDirectory)
@@ -1230,6 +1215,7 @@ struct DiskScannerTests {
             ToolsView(
                 largeFileController: controller,
                 similarImageController: similarImageController,
+                videoController: VideoScanController(rootURL: rootURL),
                 selection: .constant(.largeFiles)
             )
         }
@@ -1366,6 +1352,7 @@ struct DiskScannerTests {
             ToolsView(
                 largeFileController: largeFileController,
                 similarImageController: similarImageController,
+                videoController: VideoScanController(rootURL: rootURL),
                 selection: .constant(.similarImages)
             )
         }

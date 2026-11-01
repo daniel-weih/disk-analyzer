@@ -79,6 +79,7 @@ Drag `DiskAnalyzer.app` to **Applications**, eject the installer image, and laun
 - Separate swap-space dashboard with real system usage, recent activity, conservative application attribution, process details, search, sorting, and auto-refresh
 - Large File Finder in Tools with a selectable folder, adjustable threshold (100 MB by default), descending size order, and Finder reveal
 - Similar Image Finder in Tools with a choice between conservative near-duplicate matching and Apple Vision Feature Print content matching
+- Duplicate Video Finder in Tools with full-file verification or multi-frame visual matching, three-frame previews, duration, resolution, audio-track counts, and Finder reveal
 
 ## Disk Accounting
 
@@ -96,6 +97,17 @@ The Large File Finder compares the logical size of regular files against a decim
 The Similar Image Finder offers two explicit matching methods. **Near-duplicate** derives a local 32 × 32 perceptual feature from the first frame and combines structural hashes, pixel differences, and aspect ratio; its conservative 90% default targets the same image after resizing, recompression, or format conversion. **Apple Vision** uses a pinned Revision 1 [Feature Print](https://developer.apple.com/documentation/vision/analyzing-image-similarity-with-feature-print) and Apple's distance calculation to find similar content or scenes. For readability, the interface linearly maps the supported Vision distance range of 0...50 to a 100%...0% similarity scale, where a higher percentage means closer content. This percentage is only a presentation scale—not an Apple confidence or probability—and matching still uses the original unrounded Vision distance. The adjustable 75% default corresponds to a maximum distance of 12.5 and is an application preset calibrated against controlled examples, not a universal cutoff published by Apple. Vision comparisons are exhaustive within the ungrouped candidates, favoring complete threshold results over speed.
 
 In both methods, every result directly meets the active threshold against the marked reference image; transitive matches are not used to inflate a group. The scan does not follow symbolic links or cross separately mounted volumes, and reports damaged, restricted, or undecodable candidates separately.
+
+## Video Matching
+
+Choose a folder in **Tools → Duplicate Video Finder**, then select a method:
+
+- **Exact Duplicates (default)** groups video candidates by file size, streams complete SHA-256 hashes only for shared sizes, and confirms matching files byte for byte. Renamed copies match; differences in audio, container metadata, or any file bytes do not. Files are read in small chunks, and unique sizes require no content comparison.
+- **Similar Content** uses AVFoundation to decode eight frames evenly spaced from 5% to 95% of each video's duration. Frames are normalized to a 256 × 256 letterboxed canvas, then pinned Vision Feature Print Revision 1 observations are compared in temporal order. Every frame must meet the threshold directly against the group's reference; groups never merge through transitive matches. Higher-resolution videos are preferred as references. The default converted similarity of 80% corresponds to maximum feature distance 10, with an adjustable 70%–100% range. This is an application distance scale, not a probability or a universal Apple confidence score.
+
+Visual matching requires durations within 2% of the shorter video (with a minimum tolerance of 0.1 seconds) and aspect ratios within 3%. It targets full-length re-encoded, compressed, or proportionally resized versions. Audio is not compared, and excerpts, speed changes, and cropping are outside its scope. Sampling may miss local edits, so visual matches do not prove complete equality. Review the three preview frames, duration, resolution, audio-track counts, and original files in Finder. The tool never automatically deletes or modifies videos.
+
+Candidates are discovered by video type or common video extensions. Scans do not follow symbolic links or cross filesystem boundaries, and hard links to the same inode are checked once. Read/decode failures and files changed during scanning are reported; changed results are excluded. Previews and visual matching depend on local AVFoundation decoder support. Exact matching can still verify containers such as unsupported MKV files and keeps confirmed matches when previews are unavailable. Features and previews stay in process memory. Decoding and comparing large video collections can take time; scans are cancellable.
 
 ## Disk Status Accounting
 
@@ -117,11 +129,12 @@ Application swap values are estimates for identifying relative contributors. The
 - Scan results remain in process memory and are not persisted as a browsing history
 - Disk-space scans read names, paths, and filesystem metadata; they do not read file contents
 - Large-file scans read paths and sizes only; matching files are not opened, uploaded, or modified
-- Similar-image scans read and downsample images one at a time on this Mac; images are not uploaded or modified, and perceptual or Vision Feature Print data remains in process memory and is not written to disk
+- Similar-image scans read and downsample images one at a time on this Mac; images are not uploaded or modified, and perceptual or Vision Feature Print data remains in process memory and is not written to disk. Metadata is checked before and after decoding and before publishing results; changed images are excluded and counted in the warning.
+- Video scans stream entire files or decode sampled frames locally; low-resolution match previews and visual features remain in process memory without uploading or modifying source files
 - Disk status reads volume/device counters plus process names, executable paths, and cumulative I/O counters; it does not read file or process-memory contents
 - Optional SMART integration parses only health counters returned by `smartctl`; it does not request or retain the disk model or serial number
 - Swap analysis reads system memory counters plus process names, executable paths, task sizes, and virtual-memory region metadata; it does not read process memory contents
-- Cleanup is reviewed in the Collector, has a cancellable five-second countdown, and moves items to the recoverable system Trash
+- Cleanup is reviewed in the Collector, has a cancellable five-second countdown, and moves items to the recoverable system Trash. Before each move, the scanned device, inode, creation time, and file type are checked; replaced items are refused and require a new scan.
 - System roots such as `/System` and other protected top-level locations cannot be moved to Trash from the app
 
 ## Full Disk Access
@@ -149,6 +162,8 @@ Regenerate the English and Simplified Chinese README screenshots:
 ```
 
 The test suite covers allocated/logical accounting, hard-link deduplication, sparse files, symbolic links, large-file threshold boundaries and ordering, near-duplicate and Apple Vision image matching, damaged-image diagnostics, omitted-file aggregation, unreadable-directory diagnostics, mounted-volume classification, permission-state handling, disk I/O deltas and PID reuse, SMART JSON/error handling, live disk and swap probes, swap-attribution bounds, cancellation, home/result navigation, compact layouts, and privacy-safe UI rendering.
+
+Video tests generate controlled local fixtures to verify full-file duplicates, middle-of-file differences, re-encoding and resizing, rejection of shared intros and reversed sequences, damaged containers, hard links and symlinks, changes during scanning, cancellation, three-frame previews, and minimum-window layout. Fixture generation requires a test environment with access to macOS video codec services.
 
 ## License
 

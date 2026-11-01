@@ -235,19 +235,23 @@ struct TrashWorkflowTests {
 
     @MainActor
     @Test("A non-missing trash error preserves the complete scan snapshot")
-    func ordinaryTrashErrorPreservesSnapshot() async {
+    func ordinaryTrashErrorPreservesSnapshot() async throws {
+        let fixture = try makeFixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        try FileManager.default.createDirectory(at: fixture.appendingPathComponent("folder"), withIntermediateDirectories: true)
+        try Data("target".utf8).write(to: fixture.appendingPathComponent("folder/target.bin"))
         let target = fileNode(
-            path: "/Users/demo/folder/target.bin",
+            path: fixture.appendingPathComponent("folder/target.bin").path,
             logicalBytes: 100,
             allocatedBytes: 80
         )
         let kept = fileNode(
-            path: "/Users/demo/folder/kept.bin",
+            path: fixture.appendingPathComponent("folder/kept.bin").path,
             logicalBytes: 200,
             allocatedBytes: 160
         )
         let folder = FileNode(
-            path: "/Users/demo/folder",
+            path: fixture.appendingPathComponent("folder").path,
             name: "folder",
             kind: .directory,
             logicalBytes: 300,
@@ -257,7 +261,7 @@ struct TrashWorkflowTests {
             directoryCount: 1
         )
         let root = FileNode(
-            path: "/Users/demo",
+            path: fixture.path,
             name: "demo",
             kind: .directory,
             logicalBytes: 400,
@@ -343,7 +347,8 @@ struct TrashWorkflowTests {
             kind: .file,
             logicalBytes: logicalBytes,
             allocatedBytes: allocatedBytes,
-            fileCount: 1
+            fileCount: 1,
+            fileSnapshot: try? FileSnapshot.read(at: URL(fileURLWithPath: path))
         )
     }
 

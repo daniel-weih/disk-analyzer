@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct SMARTHealthSnapshot: Sendable, Equatable {
@@ -145,6 +146,22 @@ public enum SMARTHealthProbe {
         process.standardOutput = standardOutput
         process.standardError = standardError
 
+        let outputHandle = standardOutput.fileHandleForReading
+        let errorHandle = standardError.fileHandleForReading
+        defer {
+            try? outputHandle.close()
+            try? errorHandle.close()
+            try? standardOutput.fileHandleForWriting.close()
+            try? standardError.fileHandleForWriting.close()
+        }
+        for handle in [outputHandle, errorHandle] {
+            let descriptor = handle.fileDescriptor
+            let flags = fcntl(descriptor, F_GETFL)
+            guard flags != -1, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1 else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+        }
+
         let completion = DispatchGroup()
         completion.enter()
         process.terminationHandler = { _ in completion.leave() }
@@ -155,22 +172,30 @@ public enum SMARTHealthProbe {
             throw SMARTHealthProbeError.launchFailed(error.localizedDescription)
         }
 
+        var output = Data()
+        var diagnosticData = Data()
         let startedAt = ProcessInfo.processInfo.systemUptime
-        while completion.wait(timeout: .now() + 0.05) == .timedOut {
-            do {
+        do {
+            while true {
                 try Task.checkCancellation()
-            } catch {
-                terminate(process, completion: completion)
-                throw error
+                if ProcessInfo.processInfo.systemUptime - startedAt >= timeout {
+                    throw SMARTHealthProbeError.timedOut
+                }
+                // Drain both pipes while the child is alive. Each read pass is
+                // bounded so a noisy child cannot starve cancellation or stderr.
+                let exited = completion.wait(timeout: .now()) == .success
+                let outputRead = try drain(outputHandle, into: &output, retainLimit: Int.max)
+                let errorRead = try drain(errorHandle, into: &diagnosticData, retainLimit: 65_536)
+                if exited && outputRead == 0 && errorRead == 0 { break }
+                if !exited && outputRead == 0 && errorRead == 0 {
+                    _ = completion.wait(timeout: .now() + 0.01)
+                }
             }
-            if ProcessInfo.processInfo.systemUptime - startedAt >= timeout {
-                terminate(process, completion: completion)
-                throw SMARTHealthProbeError.timedOut
-            }
+        } catch {
+            terminate(process, completion: completion)
+            throw error
         }
 
-        let output = standardOutput.fileHandleForReading.readDataToEndOfFile()
-        let diagnosticData = standardError.fileHandleForReading.readDataToEndOfFile()
         let diagnostic = String(data: diagnosticData, encoding: .utf8)
 
         return try decode(
@@ -244,12 +269,37 @@ public enum SMARTHealthProbe {
         return String(trimmed.prefix(300))
     }
 
+    private static func drain(
+        _ handle: FileHandle, into data: inout Data, retainLimit: Int
+    ) throws -> Int {
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        var total = 0
+        while total < 262_144 {
+            let count = Darwin.read(handle.fileDescriptor, &buffer, buffer.count)
+            if count > 0 {
+                total += count
+                let retained = min(count, max(0, retainLimit - data.count))
+                data.append(contentsOf: buffer.prefix(retained))
+            } else if count == 0 {
+                break
+            } else if errno == EAGAIN || errno == EWOULDBLOCK {
+                break
+            } else if errno != EINTR {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+        }
+        return total
+    }
+
     private static func terminate(
         _ process: Process,
         completion: DispatchGroup
     ) {
         if process.isRunning { process.terminate() }
-        _ = completion.wait(timeout: .now() + 1)
+        if completion.wait(timeout: .now() + 1) == .timedOut, process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+            _ = completion.wait(timeout: .now() + 1)
+        }
     }
 }
 

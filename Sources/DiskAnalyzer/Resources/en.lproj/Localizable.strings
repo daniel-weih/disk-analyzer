@@ -1,4 +1,4 @@
-"app.title" = "Disk Analyzer";
+"app.title" = "DiskAnalyzer";
 
 "analysis.mode.picker" = "Analysis Mode";
 "analysis.mode.status" = "Disk Status";
@@ -9,6 +9,46 @@
 
 "tools.title" = "Tools";
 "tools.detail" = "Disk-related utilities will be collected here.";
+
+"videos.title" = "Duplicate Video Finder";
+"videos.selector.detail" = "Exact and multi-frame matching";
+"videos.method" = "Match method";
+"videos.method.exact" = "Exact Duplicates";
+"videos.method.similar" = "Similar Content";
+"videos.threshold" = "Similarity ≥ %@%%";
+"videos.exact.note" = "Matches have identical file contents, including audio and metadata. Entire files are verified; names may differ.";
+"videos.similar.note" = "Samples the whole video for similar visuals and duration. Audio is not compared; edits, speed changes, and partial clips are outside this mode’s scope. Review matches before removing files.";
+"videos.score.help" = "The least similar of eight corresponding frames, converted from Vision feature distance. This is not confidence or proof that the complete videos or audio are identical.";
+"videos.empty.title" = "Find Duplicate Videos";
+"videos.empty.detail" = "Choose a folder, then find identical files or visually similar versions. Matching groups include video details and three preview frames. Everything is processed locally; files are not modified.";
+"videos.phase.discovering" = "Finding Video Files";
+"videos.phase.hashing" = "Verifying Entire File Contents";
+"videos.phase.analyzing" = "Reading Video Frames";
+"videos.phase.comparing" = "Comparing Video Sequences";
+"videos.phase.previews" = "Preparing Video Previews";
+"videos.phase.done" = "Scan Complete";
+"videos.progress" = "%@ files scanned · %@ video candidates";
+"videos.summary" = "%@ groups with %@ videos";
+"videos.stats" = "%@ video candidates · %@ analyzed · %@ sec";
+"videos.search" = "Search video name or path";
+"videos.search.empty" = "No groups match the current search";
+"videos.no_matches" = "No Matching Videos Found";
+"videos.no_matches.exact" = "No fully identical video files were found among the files that could be checked. Files with unique sizes need no content comparison.";
+"videos.no_matches.similar" = "No videos met the current visual similarity and duration criteria among those that could be analyzed.";
+"videos.incomplete.title" = "No Matches in the Checked Files";
+"videos.coverage" = "Results may be incomplete: %@ unreadable folders, %@ metadata errors, %@ videos could not be read or decoded, and %@ files changed during scanning.";
+"videos.links" = "%@ additional hard-link paths were skipped because they refer to the same file data.";
+"videos.preview.errors" = "%@ video previews could not be decoded. Existing matches are retained; exact file matching does not require playback support.";
+"videos.group" = "Group %@ · %@ videos";
+"videos.audio_tracks" = "%@ audio tracks";
+"videos.identical" = "Identical";
+"videos.preview.unavailable" = "Preview unavailable";
+"videos.metadata.unavailable" = "Video details unavailable";
+"videos.picker.title" = "Choose a Video Scan Location";
+"videos.picker.message" = "Video files are read locally for matching and previews. Nothing is uploaded or modified.";
+"videos.error.changed" = "A video changed during scanning. Scan again to verify it.";
+"videos.error.undecodable" = "A video could not be read or decoded.";
+"videos.error.feature" = "Video feature comparison failed. The scan stopped to avoid omitting matches.";
 
 "large_files.title" = "Large File Finder";
 "large_files.selector.detail" = "Filter regular files by size";
@@ -79,7 +119,7 @@
 "similar_images.result.empty.title" = "No Matching Similar Images";
 "similar_images.result.empty.detail" = "This location contains no near-duplicates at or above %@%% similarity.";
 "similar_images.result.empty.vision.detail" = "This location contains no image pairs at or above %@%% converted Vision similarity.";
-"similar_images.coverage.warning" = "Results may be incomplete: %@ folders could not be read, %@ items had unavailable metadata, and %@ candidate images could not be decoded.";
+"similar_images.coverage.warning" = "Results may be incomplete: %@ folders could not be read, %@ items had unavailable metadata, %@ candidate images could not be decoded, and %@ images changed during the scan and were excluded.";
 "similar_images.volumes.skipped" = "%@ separately mounted volumes were skipped at filesystem boundaries; select one directly to scan it.";
 "similar_images.group.title" = "Similar Group %@";
 "similar_images.group.count" = "%@ images";
@@ -264,7 +304,7 @@
 "common.rescan" = "Rescan";
 
 "settings.title" = "Settings";
-"settings.subtitle" = "Choose how Disk Analyzer appears.";
+"settings.subtitle" = "Choose how DiskAnalyzer appears.";
 "settings.language.title" = "Interface Language";
 "settings.language.detail" = "The interface updates immediately and remembers this choice.";
 
@@ -349,8 +389,8 @@
 "fda.card.confirmed.detail" = "Full Disk Access was detected. Scanning can begin.";
 "fda.card.identity_changed.detail" = "This app and the previous entry in System Settings have different code identities.";
 "fda.card.unavailable.detail" = "Open the permission guide to inspect the setting, or continue scanning without it.";
-"fda.card.not_confirmed.detail" = "Authorization lets Disk Analyzer cover as many folders as possible.";
-"fda.updated_notice" = "Disk Analyzer was updated. Remove the old entry from the permission list, then add this version.";
+"fda.card.not_confirmed.detail" = "Authorization lets DiskAnalyzer cover as many folders as possible.";
+"fda.updated_notice" = "DiskAnalyzer was updated. Remove the old entry from the permission list, then add this version.";
 "fda.open_settings" = "Open Full Disk Access Settings";
 "fda.reveal_app" = "Show App in Finder";
 "fda.recheck" = "Check Permission Again";
@@ -376,7 +416,7 @@
 "fda.got_it" = "Got It";
 "fda.overlay.title" = "Drag the app into the Full Disk Access list above";
 "fda.overlay.detail" = "Then turn on its switch. Access is checked automatically.";
-"fda.overlay.back" = "Back to Disk Analyzer";
+"fda.overlay.back" = "Back to DiskAnalyzer";
 "fda.overlay.fallback" = "The drag helper stopped because the permission page could not be confirmed or located. In Full Disk Access settings, click +, select DiskAnalyzer from Applications, and turn on its switch. You can also reveal the app in Finder below.";
 "fda.overlay.intro" = "A small drag helper will appear at the bottom of System Settings. Drag the app from there into the permission list, then turn on its switch.";
 
@@ -406,7 +446,7 @@
 "collector.success.single" = "Moved to Trash: “%@”";
 "collector.success.multiple" = "Moved %@ items to Trash";
 "collector.success.missing" = "“%@” was already missing and is now hidden from the result";
-"alert.title" = "Disk Analysis";
+"alert.title" = "DiskAnalyzer";
 "navigation.up.help" = "Go up one level";
 
 "summary.current_metric" = "Current metric";
@@ -457,3 +497,5 @@
 "sunburst.enter" = "Open This Folder";
 "sunburst.none" = "(No Selection)";
 "sunburst.hint" = "Double-click a segment to open its folder";
+
+"trash.item_changed" = "“%@” has been replaced since the scan. Scan again before cleaning it up.";

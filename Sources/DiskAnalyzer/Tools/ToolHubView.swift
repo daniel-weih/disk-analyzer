@@ -3,6 +3,7 @@ import SwiftUI
 enum DiskUtilityTool: String, CaseIterable, Identifiable {
     case largeFiles
     case similarImages
+    case duplicateVideos
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum DiskUtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .largeFiles: "large_files.title"
         case .similarImages: "similar_images.title"
+        case .duplicateVideos: "videos.title"
         }
     }
 
@@ -17,6 +19,7 @@ enum DiskUtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .largeFiles: "large_files.selector.detail"
         case .similarImages: "similar_images.selector.detail"
+        case .duplicateVideos: "videos.selector.detail"
         }
     }
 
@@ -24,6 +27,7 @@ enum DiskUtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .largeFiles: "doc.text.magnifyingglass"
         case .similarImages: "photo.stack"
+        case .duplicateVideos: "film.stack"
         }
     }
 }
@@ -31,15 +35,18 @@ enum DiskUtilityTool: String, CaseIterable, Identifiable {
 struct ToolsView: View {
     @ObservedObject var largeFileController: LargeFileScanController
     @ObservedObject var similarImageController: SimilarImageScanController
+    @ObservedObject var videoController: VideoScanController
     @Binding var selection: DiskUtilityTool
 
     init(
         largeFileController: LargeFileScanController,
         similarImageController: SimilarImageScanController,
+        videoController: VideoScanController,
         selection: Binding<DiskUtilityTool>
     ) {
         self.largeFileController = largeFileController
         self.similarImageController = similarImageController
+        self.videoController = videoController
         _selection = selection
     }
 
@@ -53,6 +60,8 @@ struct ToolsView: View {
                 LargeFileToolView(controller: largeFileController)
             case .similarImages:
                 SimilarImageToolView(controller: similarImageController)
+            case .duplicateVideos:
+                DuplicateVideoToolView(controller: videoController)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -134,6 +143,8 @@ struct ToolsView: View {
             largeFileController.isScanning
         case .similarImages:
             similarImageController.isScanning
+        case .duplicateVideos:
+            videoController.isScanning
         }
     }
 }

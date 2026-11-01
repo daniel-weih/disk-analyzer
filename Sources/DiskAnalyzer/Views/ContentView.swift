@@ -411,6 +411,7 @@ final class ScanController: ObservableObject {
             let mover = trashMover
             let work = await Task.detached(priority: .userInitiated) {
                 do {
+                    try node.validateForCleanup()
                     let outcome = try mover(url)
                     switch outcome {
                     case .moved(let destinationURL):
@@ -636,6 +637,7 @@ struct ContentView: View {
     @StateObject private var swapMonitor = SwapMonitor()
     @StateObject private var largeFileScanController = LargeFileScanController()
     @StateObject private var similarImageScanController = SimilarImageScanController()
+    @StateObject private var videoScanController = VideoScanController()
     @AppStorage("fullDiskAccessOnboardingCompleted")
     private var fullDiskAccessOnboardingCompleted = false
     @AppStorage("fullDiskAccessConfirmedCodeIdentity")
@@ -690,6 +692,7 @@ struct ContentView: View {
                         ToolsView(
                             largeFileController: largeFileScanController,
                             similarImageController: similarImageScanController,
+                            videoController: videoScanController,
                             selection: $selectedDiskUtilityTool
                         )
                     }

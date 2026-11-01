@@ -22,6 +22,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
     let directoryCount: Int
     let omittedItemCount: Int
     let isUnreadable: Bool
+    let fileSnapshot: FileSnapshot?
     let isSharedReference: Bool
 
     var url: URL? {
@@ -73,7 +74,8 @@ final class FileNode: Identifiable, @unchecked Sendable {
         directoryCount: Int = 0,
         omittedItemCount: Int = 0,
         isUnreadable: Bool = false,
-        isSharedReference: Bool = false
+        isSharedReference: Bool = false,
+        fileSnapshot: FileSnapshot? = nil
     ) {
         self.id = id ?? path ?? "virtual:\(name):\(UUID().uuidString)"
         self.path = path
@@ -93,6 +95,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
         self.omittedItemCount = omittedItemCount
         self.isUnreadable = isUnreadable
         self.isSharedReference = isSharedReference
+        self.fileSnapshot = fileSnapshot
     }
 }
 

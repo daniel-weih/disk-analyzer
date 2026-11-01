@@ -41,13 +41,17 @@ final class SwapMonitor: ObservableObject {
     private var autoRefreshTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var isActive = false
+    private var refreshID: UUID?
+    private let capture: @Sendable () async throws -> SwapSnapshot
 
     init(
         snapshot: SwapSnapshot = .empty,
-        history: [SwapHistoryPoint] = []
+        history: [SwapHistoryPoint] = [],
+        capture: @escaping @Sendable () async throws -> SwapSnapshot = { try SystemProbe.capture() }
     ) {
         self.snapshot = snapshot
         self.history = history
+        self.capture = capture
     }
 
     func start() {
@@ -61,6 +65,7 @@ final class SwapMonitor: ObservableObject {
 
     func stop() {
         isActive = false
+        refreshID = nil
         autoRefreshTask?.cancel()
         autoRefreshTask = nil
         refreshTask?.cancel()
@@ -73,25 +78,34 @@ final class SwapMonitor: ObservableObject {
         isRefreshing = true
         errorMessage = nil
 
+        let requestID = UUID()
+        refreshID = requestID
+        let capture = capture
         let probeTask = Task.detached(priority: .userInitiated) {
-            try SystemProbe.capture()
+            try await capture()
         }
         refreshTask = Task { [weak self] in
+            defer {
+                if self?.refreshID == requestID {
+                    self?.isRefreshing = false
+                    self?.refreshTask = nil
+                    self?.refreshID = nil
+                }
+            }
             do {
                 let nextSnapshot = try await withTaskCancellationHandler {
                     try await probeTask.value
                 } onCancel: {
                     probeTask.cancel()
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, self?.refreshID == requestID else { return }
                 self?.apply(nextSnapshot)
             } catch is CancellationError {
                 // Expected when leaving the swap-analysis screen.
             } catch {
+                guard !Task.isCancelled, self?.refreshID == requestID else { return }
                 self?.errorMessage = Self.localizedErrorMessage(error)
             }
-            self?.isRefreshing = false
-            self?.refreshTask = nil
         }
     }
 
