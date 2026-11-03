@@ -61,7 +61,12 @@ Build and verify a DMG:
 open dist/DiskAnalyzer-2.2.0-arm64.dmg
 ```
 
-Drag `DiskAnalyzer.app` to **Applications**, eject the installer image, and launch the copy in Applications. If Gatekeeper blocks the first launch, Control-click the app in Finder and choose **Open**.
+Open the DMG and choose either installation method:
+
+- **Drag to install:** drag `DiskAnalyzer.app` to **Applications**, eject the image, and launch the copy in Applications.
+- **Double-click to install or update:** open `Install DiskAnalyzer.app` to install to `/Applications/DiskAnalyzer.app`. The installer validates the new app, safely replaces an existing version, and preserves preferences. After successfully opening the installed app, it quits and automatically ejects the DMG. If another process keeps the image busy, eject it manually later.
+
+If Gatekeeper blocks the first launch, Control-click the app in Finder and choose **Open**. The installer requires the current user to have write access to Applications.
 
 ## Features
 
@@ -153,7 +158,10 @@ DISK_ANALYZER_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
 ```bash
 swift build
 ./scripts/test.sh
+./scripts/test-installer.sh
 ```
+
+To also exercise real DMG mounting/ejection and application launching with isolated fixture apps, run `./scripts/test-installer.sh --integration`.
 
 Regenerate the English and Simplified Chinese README screenshots:
 

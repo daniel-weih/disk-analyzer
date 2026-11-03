@@ -61,7 +61,12 @@ open dist/DiskAnalyzer.app
 open dist/DiskAnalyzer-2.2.0-arm64.dmg
 ```
 
-把 `DiskAnalyzer.app` 拖入“应用程序”，推出安装镜像，再从“应用程序”启动。若首次启动被 Gatekeeper 拦截，可在 Finder 中按住 Control 点按应用并选择“打开”。
+打开 DMG 后，可选择两种安装方式：
+
+- **拖拽安装**：把 `DiskAnalyzer.app` 拖入“应用程序”，推出安装镜像，再从“应用程序”启动。
+- **双击安装或更新**：打开 `Install DiskAnalyzer.app`（中文系统显示“安装或更新 DiskAnalyzer”），自动安装到 `/Applications/DiskAnalyzer.app`。安装器会验证新版本、安全替换旧版本并保留偏好设置；成功打开安装好的应用后，退出安装器并自动推出 DMG。若镜像被其他程序占用，可稍后手动推出。
+
+若首次启动被 Gatekeeper 拦截，可在 Finder 中按住 Control 点按应用并选择“打开”。安装器需要当前用户拥有“应用程序”目录的写入权限。
 
 ## 当前能力
 
@@ -153,7 +158,10 @@ DISK_ANALYZER_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
 ```bash
 swift build
 ./scripts/test.sh
+./scripts/test-installer.sh
 ```
+
+安装器的真实 DMG 挂载/推出与应用启动检查使用隔离测试应用，可另行运行 `./scripts/test-installer.sh --integration`。
 
 重新生成 README 使用的英文和简体中文截图：
 

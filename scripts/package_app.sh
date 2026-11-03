@@ -8,15 +8,18 @@ OUTPUT_DIR=${2:-$PROJECT_DIR/dist}
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 SIGN_IDENTITY=${DISK_ANALYZER_SIGN_IDENTITY:--}
+SDK_PATH=${SDKROOT:-$(xcrun --show-sdk-path)}
 
 cd "$PROJECT_DIR"
-swift build -c "$BUILD_CONFIGURATION"
-BIN_DIR=$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)
+swift build -c "$BUILD_CONFIGURATION" --sdk "$SDK_PATH"
+BIN_DIR=$(swift build -c "$BUILD_CONFIGURATION" --sdk "$SDK_PATH" --show-bin-path)
 
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_CONTENTS/MacOS" "$APP_CONTENTS/Resources"
 cp "$BIN_DIR/$APP_NAME" "$APP_CONTENTS/MacOS/$APP_NAME"
+# Remove compiler/linker debug paths from the distributable before signing.
+strip -S "$APP_CONTENTS/MacOS/$APP_NAME"
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_CONTENTS/Info.plist"
 cp "$PROJECT_DIR/Resources/AppIcon.icns" "$APP_CONTENTS/Resources/AppIcon.icns"
 
